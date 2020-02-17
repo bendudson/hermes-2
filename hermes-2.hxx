@@ -235,6 +235,12 @@ private:
 
   // Mesh quantities
   Field2D B32, sqrtB;
+
+  bool fci_transform;
+  Field3D Bxyz, logB;
+  Field3D bracket_factor;
+  const Field3D fci_curvature(const Field3D &f);
+
 };
 
 /// Fundamental constants

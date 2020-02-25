@@ -23,12 +23,6 @@ Diffusion2D::Diffusion2D(Solver *solver, Mesh*, Options &options) : NeutralModel
   inv = 0;
 }
 
-Diffusion2D::~Diffusion2D() {
-  if(inv) {
-    delete inv;
-  }
-}
-
 void Diffusion2D::update(const Field3D &Ne, const Field3D &Te, const Field3D &UNUSED(Ti), const Field3D &UNUSED(Vi)) {
   
   mesh->communicate(Nn, Pn);

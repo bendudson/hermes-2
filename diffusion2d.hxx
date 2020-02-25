@@ -8,7 +8,7 @@
 class Diffusion2D : public NeutralModel {
 public:
   Diffusion2D(Solver *solver, Mesh *mesh, Options &options);
-  ~Diffusion2D();
+  ~Diffusion2D() {}
 
   void update(const Field3D &Ne, const Field3D &Te, const Field3D &Ti, const Field3D &Vi);
   
@@ -20,7 +20,7 @@ private:
   
   BoutReal Lmax; // Maximum mean free path [m]
 
-  Laplacian *inv; // Laplacian inversion used for preconditioning
+  std::unique_ptr<Laplacian> inv; // Laplacian inversion used for preconditioning
 };
 
 #endif // __NEUTRAL_DIFFUSION2D_H__

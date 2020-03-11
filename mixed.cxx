@@ -275,15 +275,15 @@ void NeutralMixed::update(const Field3D &Ne, const Field3D &Te,
         // gamma * n * T * cs
         BoutReal q = neutral_gamma * Nnout * Tnout * sqrt(Tnout);
         // Multiply by cell area to get power
-        BoutReal heatflux = q * (coord->J(r.ind, mesh->ystart) +
-                                 coord->J(r.ind, mesh->ystart - 1)) /
-                            (sqrt(coord->g_22(r.ind, mesh->ystart)) +
-                             sqrt(coord->g_22(r.ind, mesh->ystart - 1)));
+        BoutReal heatflux = q * (coord->J(r.ind, mesh->ystart, jz) +
+                                 coord->J(r.ind, mesh->ystart - 1, jz)) /
+	  (sqrt(coord->g_22(r.ind, mesh->ystart, jz)) +
+	   sqrt(coord->g_22(r.ind, mesh->ystart - 1, jz)));
 
         // Divide by volume of cell, and multiply by 2/3 to get pressure
         ddt(Pn)(r.ind, mesh->ystart, jz) -=
-            (2. / 3) * heatflux /
-            (coord->dy(r.ind, mesh->ystart) * coord->J(r.ind, mesh->ystart));
+	  (2. / 3) * heatflux /
+	  (coord->dy(r.ind, mesh->ystart, jz) * coord->J(r.ind, mesh->ystart, jz));
       }
     }
   }
@@ -312,14 +312,14 @@ void NeutralMixed::update(const Field3D &Ne, const Field3D &Te,
         BoutReal q = neutral_gamma * Nnout * Tnout * sqrt(Tnout);
         // Multiply by cell area to get power
         BoutReal heatflux =
-            q * (coord->J(r.ind, mesh->yend) + coord->J(r.ind, mesh->yend + 1)) /
-            (sqrt(coord->g_22(r.ind, mesh->yend)) +
-             sqrt(coord->g_22(r.ind, mesh->yend + 1)));
+	  q * (coord->J(r.ind, mesh->yend, jz) + coord->J(r.ind, mesh->yend + 1, jz)) /
+	  (sqrt(coord->g_22(r.ind, mesh->yend, jz)) +
+	   sqrt(coord->g_22(r.ind, mesh->yend + 1, jz)));
 
         // Divide by volume of cell, and multiply by 2/3 to get pressure
         ddt(Pn)(r.ind, mesh->yend, jz) -=
             (2. / 3) * heatflux /
-            (coord->dy(r.ind, mesh->yend) * coord->J(r.ind, mesh->yend));
+	  (coord->dy(r.ind, mesh->yend, jz) * coord->J(r.ind, mesh->yend, jz));
       }
     }
   }

@@ -16,8 +16,12 @@ FullVelocity::FullVelocity(Solver *solver, Mesh *mesh, Options &options)
    * V_x, V_y, V_z
    */
 
-  coord = mesh->getCoordinates();
-  
+  Coordinates *coord = mesh->getCoordinates();
+  Field2D dx_2D = DC(coord->dx);
+  Field2D dy_2D = DC(coord->dy);
+  Field2D J_2D = DC(coord->J);
+  Field2D g_22_2D = DC(coord->g_22);
+
   options.get("gamma_ratio", gamma_ratio, 5. / 3);
   options.get("viscosity", neutral_viscosity, 1e-2);
   options.get("bulk", neutral_bulk, 1e-2);
@@ -75,22 +79,20 @@ FullVelocity::FullVelocity(Solver *solver, Mesh *mesh, Options &options)
   Txz.allocate();
   Tyr.allocate();
   Tyz.allocate();
-
-  Coordinates *coord = mesh->getCoordinates();
   
   for (int i = 0; i < mesh->LocalNx; i++)
     for (int j = mesh->ystart; j <= mesh->yend; j++) {
       // Central differencing of coordinates
       BoutReal dRdtheta, dZdtheta;
       if (j == mesh->ystart) {
-        dRdtheta = (Rxy(i, j + 1) - Rxy(i, j)) / (coord->dy(i, j));
-        dZdtheta = (Zxy(i, j + 1) - Zxy(i, j)) / (coord->dy(i, j));
+        dRdtheta = (Rxy(i, j + 1) - Rxy(i, j)) / (dy_2D(i, j));
+        dZdtheta = (Zxy(i, j + 1) - Zxy(i, j)) / (dy_2D(i, j));
       } else if (j == mesh->yend) {
-        dRdtheta = (Rxy(i, j) - Rxy(i, j - 1)) / (coord->dy(i, j));
-        dZdtheta = (Zxy(i, j) - Zxy(i, j - 1)) / (coord->dy(i, j));
+        dRdtheta = (Rxy(i, j) - Rxy(i, j - 1)) / (dy_2D(i, j));
+        dZdtheta = (Zxy(i, j) - Zxy(i, j - 1)) / (dy_2D(i, j));
       } else {
-        dRdtheta = (Rxy(i, j + 1) - Rxy(i, j - 1)) / (2. * coord->dy(i, j));
-        dZdtheta = (Zxy(i, j + 1) - Zxy(i, j - 1)) / (2. * coord->dy(i, j));
+        dRdtheta = (Rxy(i, j + 1) - Rxy(i, j - 1)) / (2. * dy_2D(i, j));
+        dZdtheta = (Zxy(i, j + 1) - Zxy(i, j - 1)) / (2. * dy_2D(i, j));
       }
 
       // Match to hthe, 1/|Grad y|
@@ -102,15 +104,15 @@ FullVelocity::FullVelocity(Solver *solver, Mesh *mesh, Options &options)
       BoutReal dRdpsi, dZdpsi;
       if (i == 0) {
         // One-sided differences
-        dRdpsi = (Rxy(i + 1, j) - Rxy(i, j)) / (coord->dx(i, j));
-        dZdpsi = (Zxy(i + 1, j) - Zxy(i, j)) / (coord->dx(i, j));
+        dRdpsi = (Rxy(i + 1, j) - Rxy(i, j)) / (dx_2D(i, j));
+        dZdpsi = (Zxy(i + 1, j) - Zxy(i, j)) / (dx_2D(i, j));
       } else if (i == (mesh->LocalNx - 1)) {
         // One-sided differences
-        dRdpsi = (Rxy(i, j) - Rxy(i - 1, j)) / (coord->dx(i, j));
-        dZdpsi = (Zxy(i, j) - Zxy(i - 1, j)) / (coord->dx(i, j));
+        dRdpsi = (Rxy(i, j) - Rxy(i - 1, j)) / (dx_2D(i, j));
+        dZdpsi = (Zxy(i, j) - Zxy(i - 1, j)) / (dx_2D(i, j));
       } else {
-        dRdpsi = (Rxy(i + 1, j) - Rxy(i - 1, j)) / (2. * coord->dx(i, j));
-        dZdpsi = (Zxy(i + 1, j) - Zxy(i - 1, j)) / (2. * coord->dx(i, j));
+        dRdpsi = (Rxy(i + 1, j) - Rxy(i - 1, j)) / (2. * dx_2D(i, j));
+        dZdpsi = (Zxy(i + 1, j) - Zxy(i - 1, j)) / (2. * dx_2D(i, j));
       }
 
       // Match to Bp, |Grad psi|. NOTE: this only works if
@@ -156,8 +158,15 @@ FullVelocity::FullVelocity(Solver *solver, Mesh *mesh, Options &options)
 
 void FullVelocity::update(const Field3D &Ne, const Field3D &Te,
                           const Field3D &Ti, const Field3D &Vi) {
-
+  
   mesh->communicate(Nn2D, Vn2D, Pn2D);
+
+  Coordinates *coord = mesh->getCoordinates();
+  Field2D dx2D = DC(coord->dx);
+  Field2D dy_2D = DC(coord->dy);
+  Field2D J_2D = DC(coord->J);
+  Field2D g_22_2D = DC(coord->g_22);
+  Field2D Bxy2D = DC(coord->Bxy);
   
   // Navier-Stokes for axisymmetric neutral gas profiles
   // Nn2D, Pn2D and Tn2D are unfloored
@@ -181,26 +190,28 @@ void FullVelocity::update(const Field3D &Ne, const Field3D &Te,
 
     for (RangeIterator idwn = mesh->iterateBndryLowerY(); !idwn.isDone();
          idwn.next()) {
+      for (int k = 0; k < mesh->LocalNz; k++) {
 
-      if (Vn2D.y(idwn.ind, mesh->ystart) < 0.0) {
-        // Flowing out of domain
-        Vn2D.y(idwn.ind, mesh->ystart - 1) = Vn2D.y(idwn.ind, mesh->ystart);
-      } else {
-        // Flowing into domain
-        Vn2D.y(idwn.ind, mesh->ystart - 1) = -Vn2D.y(idwn.ind, mesh->ystart);
+	if (Vn2D.y(idwn.ind, mesh->ystart, k) < 0.0) {
+	  // Flowing out of domain
+	  Vn2D.y(idwn.ind, mesh->ystart - 1, k) = Vn2D.y(idwn.ind, mesh->ystart, k);
+	} else {
+	  // Flowing into domain
+	  Vn2D.y(idwn.ind, mesh->ystart - 1, k) = -Vn2D.y(idwn.ind, mesh->ystart, k);
+	}
+	// Neumann boundary condition on X and Z components
+	Vn2D.x(idwn.ind, mesh->ystart - 1, k) = Vn2D.x(idwn.ind, mesh->ystart, k);
+	Vn2D.z(idwn.ind, mesh->ystart - 1, k) = Vn2D.z(idwn.ind, mesh->ystart, k);
+	
+	// Neumann conditions on density and pressure
+	Nn2D(idwn.ind, mesh->ystart - 1, k) = Nn2D(idwn.ind, mesh->ystart, k);
+	Pn2D(idwn.ind, mesh->ystart - 1, k) = Pn2D(idwn.ind, mesh->ystart, k);
       }
-      // Neumann boundary condition on X and Z components
-      Vn2D.x(idwn.ind, mesh->ystart - 1) = Vn2D.x(idwn.ind, mesh->ystart);
-      Vn2D.z(idwn.ind, mesh->ystart - 1) = Vn2D.z(idwn.ind, mesh->ystart);
-
-      // Neumann conditions on density and pressure
-      Nn2D(idwn.ind, mesh->ystart - 1) = Nn2D(idwn.ind, mesh->ystart);
-      Pn2D(idwn.ind, mesh->ystart - 1) = Pn2D(idwn.ind, mesh->ystart);
     }
   }
 
   // Density
-  ddt(Nn2D) = -Div(Vn2D, Nn2D);
+  ddt(Nn2D) = -DC(Div(Vn2D, Nn2D));
 
   Field2D Nn2D_floor = floor(Nn2D, 1e-2);
   // Velocity
@@ -212,12 +223,12 @@ void FullVelocity::update(const Field3D &Ne, const Field3D &Te,
   // Convert to cylindrical coordinates for velocity
   // advection term. This is to avoid Christoffel symbol
   // terms in curvilinear geometry
-  Field2D vr = Txr * Vn2D.x + Tyr * Vn2D.y; // Grad R component
-  Field2D vz = Txz * Vn2D.x + Tyz * Vn2D.y; // Grad Z component
+  Field2D vr = Txr * DC(Vn2D.x) + Tyr * DC(Vn2D.y); // Grad R component
+  Field2D vz = Txz * DC(Vn2D.x) + Tyz * DC(Vn2D.y); // Grad Z component
 
   // Advect as scalars (no Christoffel symbols needed)
-  ddt(vr) = -V_dot_Grad(Vn2D, vr);
-  ddt(vz) = -V_dot_Grad(Vn2D, vz);
+  ddt(vr) = -DC(V_dot_Grad(Vn2D, vr));
+  ddt(vz) = -DC(V_dot_Grad(Vn2D, vz));
 
   // Convert back to field-aligned coordinates
   ddt(Vn2D).x += Urx * ddt(vr) + Uzx * ddt(vz);
@@ -234,7 +245,7 @@ void FullVelocity::update(const Field3D &Ne, const Field3D &Te,
   ddt(Vn2D).x += Urx * ddt(vr) + Uzx * ddt(vz);
   ddt(Vn2D).y += Ury * ddt(vr) + Uzy * ddt(vz);
 
-  DivV2D = Div(Vn2D);
+  DivV2D = DC(Div(Vn2D));
   DivV2D.applyBoundary(0.0);
   mesh->communicate(DivV2D);
 
@@ -243,7 +254,7 @@ void FullVelocity::update(const Field3D &Ne, const Field3D &Te,
 
   //////////////////////////////////////////////////////
   // Pressure
-  ddt(Pn2D) = -Div(Vn2D, Pn2D) -
+  ddt(Pn2D) = -DC(Div(Vn2D, Pn2D)) -
               (gamma_ratio - 1.) * Pn2D * DivV2D * floor(Nn2D, 0) / Nn2D_floor +
               Laplace_FV(neutral_conduction, Pn2D / Nn2D);
 
@@ -272,14 +283,14 @@ void FullVelocity::update(const Field3D &Ne, const Field3D &Te,
     BoutReal q = neutral_gamma * Nnout * Tnout * sqrt(Tnout);
     // Multiply by cell area to get power
     BoutReal heatflux =
-        q * (coord->J(r.ind, mesh->ystart) + coord->J(r.ind, mesh->ystart - 1)) /
-        (sqrt(coord->g_22(r.ind, mesh->ystart)) +
-         sqrt(coord->g_22(r.ind, mesh->ystart - 11)));
+        q * (J_2D(r.ind, mesh->ystart) + J_2D(r.ind, mesh->ystart - 1)) /
+        (sqrt(g_22_2D(r.ind, mesh->ystart)) +
+         sqrt(g_22_2D(r.ind, mesh->ystart - 1)));
 
     // Divide by volume of cell, and multiply by 2/3 to get pressure
     ddt(Pn2D)(r.ind, mesh->ystart) -=
         (2. / 3) * heatflux /
-        (coord->dy(r.ind, mesh->ystart) * coord->J(r.ind, mesh->ystart));
+        (dy_2D(r.ind, mesh->ystart) * J_2D(r.ind, mesh->ystart));
   }
 
   for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
@@ -304,14 +315,14 @@ void FullVelocity::update(const Field3D &Ne, const Field3D &Te,
     BoutReal q = neutral_gamma * Nnout * Tnout * sqrt(Tnout);
     // Multiply by cell area to get power
     BoutReal heatflux =
-        q * (coord->J(r.ind, mesh->yend) + coord->J(r.ind, mesh->yend + 1)) /
-        (sqrt(coord->g_22(r.ind, mesh->yend)) +
-         sqrt(coord->g_22(r.ind, mesh->yend + 1)));
+        q * (J_2D(r.ind, mesh->yend) + J_2D(r.ind, mesh->yend + 1)) /
+        (sqrt(g_22_2D(r.ind, mesh->yend)) +
+         sqrt(g_22_2D(r.ind, mesh->yend + 1)));
 
     // Divide by volume of cell, and multiply by 2/3 to get pressure
     ddt(Pn2D)(r.ind, mesh->yend) -=
         (2. / 3) * heatflux /
-        (coord->dy(r.ind, mesh->yend) * coord->J(r.ind, mesh->yend));
+        (dy_2D(r.ind, mesh->yend) * J_2D(r.ind, mesh->yend));
   }
 
   // Exchange of parallel momentum. This could be done
@@ -319,7 +330,7 @@ void FullVelocity::update(const Field3D &Ne, const Field3D &Te,
   // Vn2D is covariant and b = e_y / (JB) to write:
   //
   // V_{||n} = b dot V_n = Vn2D.y / (JB)
-  Field2D Vnpar = Vn2D.y / (coord->J * coord->Bxy);
+  Field2D Vnpar = DC(Vn2D.y) / (J_2D * Bxy2D);
 
   /////////////////////////////////////////////////////
   // Atomic processes
@@ -340,7 +351,7 @@ void FullVelocity::update(const Field3D &Ne, const Field3D &Te,
   ddt(Pn2D) += (2. / 3) * DC(Qi);
 
   // Momentum. Note need to turn back into covariant form
-  ddt(Vn2D).y += DC(F) * (coord->J * coord->Bxy) / Nn2D_floor;
+  ddt(Vn2D).y += DC(F) * (J_2D * Bxy2D) / Nn2D_floor;
 
   // Density evolution
   for (auto &i : Nn2D.getRegion("RGN_ALL")) {
@@ -358,11 +369,14 @@ void FullVelocity::addPressure(int x, int y, int UNUSED(z), BoutReal dpdt) {
   ddt(Pn2D)(x, y) += dpdt / mesh->LocalNz;
 }
 
-void FullVelocity::addMomentum(int x, int y, int UNUSED(z), BoutReal dnvdt) {
+void FullVelocity::addMomentum(int x, int y, int z, BoutReal dnvdt) {
   // Momentum added in the direction of the magnetic field
   // Vn2D is covariant and b = e_y / (JB) to write:
   //
   // V_{||n} = b dot V_n = Vn2D.y / (JB)
+  Coordinates *coord = mesh->getCoordinates();
+  BoutReal J = coord->J(x, y, z);
+  BoutReal Bxy = coord->Bxy(x, y, z);
 
-  ddt(Vn2D.y)(x, y) += dnvdt * (coord->J(x, y) * coord->Bxy (x, y)) / Nn2D(x, y); 
+  ddt(Vn2D.y)(x, y, z) += dnvdt * (J * Bxy) / Nn2D(x, y); 
 }

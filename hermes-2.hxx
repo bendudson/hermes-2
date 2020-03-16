@@ -196,7 +196,7 @@ private:
   bool density_inflow;  // Does incoming density have momentum?
   
   bool source_vary_g11; // Multiply source by g11
-  Field2D g11norm;
+  Coordinates::metric_field_type g11norm;
   
   // Boundary fluxes
   
@@ -234,13 +234,14 @@ private:
   LaplaceXZ *newSolver; // New Laplacian in X-Z
 
   // Mesh quantities
-  Field2D B32, sqrtB;
+  Coordinates::metric_field_type B32, sqrtB;
 
   bool fci_transform;
   Field3D Bxyz, logB;
   Field3D bracket_factor;
   const Field3D fci_curvature(const Field3D &f);
 
+  Field3D a,b,c,d,f; //Debugging variables
 };
 
 /// Fundamental constants

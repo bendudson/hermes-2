@@ -269,7 +269,7 @@ const Field3D Div_n_bxGrad_f_B_XPPM(const Field3D &n, const Field3D &f,
 
         BoutReal vU = 0.5 * (coord->J(i, j, k) + coord->J(i, j , kp)) * (fmp - fpp) /
 	  coord->dx(i, j, k); // -J*df/dx
-        BoutReal vD = 0.5 * (coord->J(i, j, k) + coord->J(i, j , km)) * (fmp - fpp) /
+        BoutReal vD = 0.5 * (coord->J(i, j, k) + coord->J(i, j , km)) * (fmm - fpm) /
 	  coord->dx(i, j, k); // -J*df/dx
 
         BoutReal vR = 0.5 * (coord->J(i, j, k) + coord->J(i + 1, j, k)) * (fpp - fpm) /

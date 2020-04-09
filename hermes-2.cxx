@@ -767,9 +767,22 @@ int Hermes::init(bool restarting) {
   }
   
   if (Options::root()["mesh"]["paralleltransform"].as<std::string>() == "shifted") {
-    Field2D I;
-    mesh->get(I, "sinty");
-    Curlb_B.z += I * Curlb_B.x;
+    // Check if the gridfile was created for "shiftedmetric" or for "identity" parallel
+    // transform
+    std::string gridfile_parallel_transform;
+    if (mesh->get(gridfile_parallel_transform, "parallel_transform")) {
+      // Did not find in gridfile, indicates older gridfile, which generated output for
+      // field-aligned coordinates, i.e. "identity" parallel transform
+      gridfile_parallel_transform = "identity";
+    }
+    if (gridfile_parallel_transform == "identity") {
+      Field2D I;
+      mesh->get(I, "sinty");
+      Curlb_B.z += I * Curlb_B.x;
+    } else if (gridfile_parallel_transform != "shifted") {
+      throw BoutException("Gridfile generated for unsupported parallel transform %s",
+                          gridfile_parallel_transform);
+    }
   }
 
   Curlb_B.x /= Bnorm;

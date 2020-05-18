@@ -219,19 +219,24 @@ private:
   // Electromagnetic solver for finite electron mass case
   bool split_n0_psi;   // Split the n=0 component of Apar (psi)?
   //Laplacian *aparSolver;
-  LaplaceXZ *aparSolver;
+  // LaplaceXZ *aparSolver;
+  std::unique_ptr<LaplaceXZ> aparSolver{nullptr};
+
+  // std::unique_ptr<LaplaceXY> aparXY{nullptr};
   LaplaceXY *aparXY;    // Solves n=0 component
   Field2D psi2D;        // Axisymmetric Psi
   
   // Solvers for the electrostatic potential
 
   bool split_n0;        // Split solve into n=0 and n~=0?
+  // std::unique_ptr<LaplaceXY> laplacexy{nullptr};
   LaplaceXY *laplacexy; // Laplacian solver in X-Y (n=0)
   Field2D phi2D;        // Axisymmetric phi
   
   bool newXZsolver; 
-  Laplacian *phiSolver; // Old Laplacian in X-Z
-  LaplaceXZ *newSolver; // New Laplacian in X-Z
+  std::unique_ptr<Laplacian> phiSolver{nullptr}; // Old Laplacian in X-Z
+  std::unique_ptr<LaplaceXZ> newSolver{nullptr}; // New Laplacian in X-Z
+
 
   // Mesh quantities
   Coordinates::metric_field_type B32, sqrtB;

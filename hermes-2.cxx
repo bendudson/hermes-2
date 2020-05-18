@@ -608,8 +608,6 @@ int Hermes::init(bool restarting) {
 
   if (Options::root()["mesh"]["paralleltransform"].as<std::string>() == "fci") {
     fci_transform = true;
-    Coordinates *coord=mesh->getCoordinates();
-    SAVE_ONCE(coord->g_22);
   }else{
     fci_transform = false;
   }
@@ -619,7 +617,6 @@ int Hermes::init(bool restarting) {
     poloidal_flows = false;
     mesh->get(Bxyz, "B",1.0);
     SAVE_ONCE(Bxyz);
-
     Bxyz.applyBoundary("neumann");
     ASSERT1( min(Bxyz) > 0.0 );
     
@@ -633,8 +630,11 @@ int Hermes::init(bool restarting) {
 
     bracket_factor = sqrt(coord->g_22) / (coord->J * Bxyz);
     SAVE_ONCE(bracket_factor);
+  }else{
+    bracket_factor = 1.0;//sqrt(coord->g_22) / (coord->J * coord->Bxy);
+    SAVE_ONCE(bracket_factor);
   }
-
+  
   /////////////////////////////////////////////////////////
   // Neutral models
 
@@ -777,7 +777,7 @@ int Hermes::init(bool restarting) {
   try {
     Curlb_B.covariant = false; // Contravariant
     mesh->get(Curlb_B, "bxcv");
-  
+    SAVE_ONCE(Curlb_B);
   } catch (BoutException &e) {
     try {
       // May be 2D, reading as 3D
@@ -839,7 +839,7 @@ int Hermes::init(bool restarting) {
       // Test new LaplaceXZ solver
       newSolver = LaplaceXZ::create(mesh);
       // Set coefficients for Boussinesq solve
-      newSolver->setCoefs(1. / SQ(coord->Bxy), 0.0);
+      newSolver->setCoefs(Field3D(1.0), Field3D(0.0));
     } else {
       // Use older Laplacian solver
       phiSolver = Laplacian::create(&opt["phiSolver"]);
@@ -895,8 +895,6 @@ int Hermes::init(bool restarting) {
 
   psi = phi = 0.0;
 
-  // SAVE_REPEAT2(a,b);
-  
   // Preconditioner
   setPrecon((preconfunc)&Hermes::precon);
   return 0;
@@ -1064,7 +1062,7 @@ int Hermes::rhs(BoutReal t) {
 
           // Solve non-axisymmetric part using X-Z solver
           if (newXZsolver) {
-            newSolver->setCoefs(1. / SQ(coord->Bxy), 0.0);
+            newSolver->setCoefs(Field3D(1. / SQ(coord->Bxy)), Field3D(0.0));
             phi = newSolver->solve(Vort - Vort2D, phi);
           } else {
             phiSolver->setCoefC(1. / SQ(coord->Bxy));
@@ -1091,7 +1089,7 @@ int Hermes::rhs(BoutReal t) {
         }
         
         // Hot ion term in vorticity
-        phi -= Pi;
+        // phi -= Pi;
 
       } else {
         ////////////////////////////////////////////
@@ -2349,9 +2347,9 @@ int Hermes::rhs(BoutReal t) {
     if(!fci_transform){
       ddt(Ne) -= FV::Div_f_v(Ne, -Telim * Curlb_B, ne_bndry_flux);
     }else{
-      Vector3D netelimcb = Ne * Telim * Curlb_B;
+      Vector3D netelimcb = - Ne * Telim * Curlb_B;
       mesh->communicate(netelimcb);
-      ddt(Ne) -= Div(-netelimcb);
+      ddt(Ne) -= Div(netelimcb);
     }      
   }
 
@@ -2477,7 +2475,7 @@ int Hermes::rhs(BoutReal t) {
       }
 
       // V_ExB dot Grad(Pi)
-      Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA);
+      Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA)*bracket_factor;
       vEdotGradPi.applyBoundary("free_o2");
       // delp2(phi) term
       Field3D DelpPhi_2B2 = 0.5 * Delp2(phi) / SQ(coord->Bxy);
@@ -2634,7 +2632,7 @@ int Hermes::rhs(BoutReal t) {
 	mesh->communicate(vdiff);
 	ddt(VePsi) -= Vi * Grad_par(vdiff); // Parallel advection
       }
-      ddt(VePsi) -= bracket(phi, Ve - Vi, BRACKET_ARAKAWA);  // ExB advection
+      ddt(VePsi) -= bracket(phi, Ve - Vi, BRACKET_ARAKAWA)*bracket_factor;  // ExB advection
       // Should also have ion polarisation advection here
     }
     
@@ -3214,7 +3212,7 @@ int Hermes::rhs(BoutReal t) {
       //(4. / 9) * Vi * B32 * Grad_par(Pi_ciperp / B32);
 
       ddt(Pi) -= (2. / 6) * Pi_ci * Curlb_B * Grad(phi + Pi);
-      ddt(Pi) += (2. / 9) * bracket(Pi_ci, phi + Pi, BRACKET_ARAKAWA);
+      ddt(Pi) += (2. / 9) * bracket(Pi_ci, phi + Pi, BRACKET_ARAKAWA)*bracket_factor;
     }
   }
   
@@ -3785,10 +3783,10 @@ int Hermes::rhs(BoutReal t) {
  * @param[in] delta   Not used here
  */
 int Hermes::precon(BoutReal t, BoutReal gamma, BoutReal delta) {
-  static InvertPar *inv = NULL;
+  static std::unique_ptr<InvertPar> inv{nullptr};
   if (!inv) {
     // Initialise parallel inversion class
-    inv = InvertPar::Create();
+    auto inv = InvertPar::Create();
     inv->setCoefA(1.0);
   }
   if (thermal_conduction) {

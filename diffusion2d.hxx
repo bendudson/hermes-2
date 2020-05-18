@@ -20,7 +20,7 @@ private:
   
   BoutReal Lmax; // Maximum mean free path [m]
 
-  Laplacian *inv; // Laplacian inversion used for preconditioning
+  std::unique_ptr<Laplacian> inv{nullptr}; // Laplacian inversion used for preconditioning
 };
 
 #endif // __NEUTRAL_DIFFUSION2D_H__

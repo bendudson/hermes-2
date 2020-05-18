@@ -25,7 +25,7 @@ Diffusion2D::Diffusion2D(Solver *solver, Mesh*, Options &options) : NeutralModel
 
 Diffusion2D::~Diffusion2D() {
   if(inv) {
-    delete inv;
+    delete &inv;
   }
 }
 

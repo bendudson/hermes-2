@@ -781,7 +781,7 @@ int Hermes::init(bool restarting) {
       Curlb_B.z += I * Curlb_B.x;
     } else if (gridfile_parallel_transform != "shifted") {
       throw BoutException("Gridfile generated for unsupported parallel transform %s",
-                          gridfile_parallel_transform);
+                          gridfile_parallel_transform.c_str());
     }
   }
 

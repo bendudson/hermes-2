@@ -779,7 +779,8 @@ int Hermes::init(bool restarting) {
       Field2D I;
       mesh->get(I, "sinty");
       Curlb_B.z += I * Curlb_B.x;
-    } else if (gridfile_parallel_transform != "shifted") {
+    } else if ((gridfile_parallel_transform != "shifted") and
+               (gridfile_parallel_transform != "shiftedmetric")){
       throw BoutException("Gridfile generated for unsupported parallel transform %s",
                           gridfile_parallel_transform.c_str());
     }

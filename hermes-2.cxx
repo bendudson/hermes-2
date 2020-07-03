@@ -3500,19 +3500,14 @@ int Hermes::rhs(BoutReal t) {
 
   if (sinks) {
     // Sink terms for 2D simulations
+    // Sheath connected assumption
 
-    // Field3D nsink = 0.5*Ne*sqrt(Telim)*sink_invlpar;   // n C_s/ (2L)  //
     // Sound speed flow to targets
-    Field3D nsink = 0.5 * sqrt(Ti) * Ne * sink_invlpar;
-    nsink = floor(nsink, 0.0);
+    Field3D nsink = floor(0.5 * sqrt(Ti + Telim) * Ne * sink_invlpar, 0.0);
 
     ddt(Ne) -= nsink;
-
-    Field3D conduct = (2. / 3) * kappa_epar * Te * SQ(sink_invlpar);
-    conduct = floor(conduct, 0.0);
-    ddt(Pe) -= conduct      // Heat conduction
-               + Te * nsink // Advection
-        ;
+    ddt(Pe) -= (2./3) * sheath_gamma_e * Te * nsink;
+    ddt(Pi) -= (2./3) * sheath_gamma_i * Ti * nsink;
 
     if (sheath_closure) {
       ///////////////////////////

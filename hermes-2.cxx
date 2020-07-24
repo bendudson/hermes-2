@@ -442,7 +442,7 @@ int Hermes::init(bool restarting) {
 
   if (sinks) {
     std::string source = optsc["sink_invlpar"].withDefault<std::string>("0.05"); // 20 m
-    sink_invlpar = fact.create2D(source);
+    sink_invlpar = fact.create3D(source);
     sink_invlpar *= rho_s0; // Normalise
     SAVE_ONCE(sink_invlpar);
 
@@ -2830,9 +2830,9 @@ int Hermes::rhs(BoutReal t) {
     if(!fci_transform){
       ddt(Pe) -= (5. / 3) * FV::Div_f_v(Pe, -Telim * Curlb_B, pe_bndry_flux);
     }else{
-      Vector3D petelimcb = Pe*Telim*Curlb_B;
+      Vector3D petelimcb = Pe*-Telim*Curlb_B;
       mesh->communicate(petelimcb);
-      ddt(Pe) -= (5. / 3) * Div(-petelimcb);
+      ddt(Pe) -= (5. / 3) * Div(petelimcb);
     }
 
     // This term energetically balances diamagnetic term

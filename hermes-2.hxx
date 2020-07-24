@@ -196,7 +196,7 @@ private:
   bool density_inflow;  // Does incoming density have momentum?
   
   bool source_vary_g11; // Multiply source by g11
-  Coordinates::metric_field_type g11norm;
+  Coordinates::FieldMetric g11norm;
   
   // Boundary fluxes
   
@@ -239,7 +239,7 @@ private:
 
 
   // Mesh quantities
-  Coordinates::metric_field_type B32, sqrtB;
+  Coordinates::FieldMetric B32, sqrtB;
 
   bool fci_transform;
   Field3D Bxyz, logB;

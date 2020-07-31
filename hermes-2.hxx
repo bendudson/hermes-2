@@ -146,7 +146,7 @@ private:
   BoutReal resistivity_boundary; // Value of nu in boundary layer
   int resistivity_boundary_width; // Width of radial boundary
   
-  Field2D sink_invlpar; // Parallel inverse connection length (1/L_{||}) for
+  Field3D sink_invlpar; // Parallel inverse connection length (1/L_{||}) for
                         // sink terms
   Field2D alpha_dw;
 
@@ -199,7 +199,7 @@ private:
   Coordinates::FieldMetric g11norm;
   
   // Boundary fluxes
-  
+
   bool pe_bndry_flux;   // Allow flux of pe through radial boundaries
   bool ne_bndry_flux;   // Allow flux of ne through radial boundaries
   bool vort_bndry_flux; // Allow flux of vorticity through radial boundaries
@@ -215,7 +215,7 @@ private:
   // Perturbed parallel gradient operators
   const Field3D Grad_parP(const Field3D &f);
   const Field3D Div_parP(const Field3D &f);
-  
+
   // Electromagnetic solver for finite electron mass case
   bool split_n0_psi;   // Split the n=0 component of Apar (psi)?
   //Laplacian *aparSolver;

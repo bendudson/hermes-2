@@ -2560,7 +2560,7 @@ int Hermes::rhs(BoutReal t) {
       if(!fci_transform){
 	ddt(Vort) -= FV::Div_par(Vort, 0.0, max_speed);
       }else{
-	ddt(Vort) -= Div_par(Vort);
+	ddt(Vort) += SQ(coord->dy)*D2DY2(Vort);
       }
     }
   }
@@ -2672,7 +2672,7 @@ int Hermes::rhs(BoutReal t) {
       }else{
 	Field3D vdiff = Ve-Vi;
 	mesh->communicate(vdiff);
-	ddt(VePsi) -= Div_par(vdiff);
+	ddt(VePsi) += SQ(coord->dy)*D2DY2(vdiff);
       }	
     }
   }

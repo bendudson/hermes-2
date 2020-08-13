@@ -569,7 +569,7 @@ int Hermes::init(bool restarting) {
   // field normalisations
   TRACE("Loading metric tensor");
 
-  Coordinates *coord = mesh->getCoordinates();
+  Coordinates *coord = bout::globals::mesh->getCoordinates();
 
   if (optsc["loadmetric"]
           .doc("Load Rxy, Bpxy etc. to create orthogonal metric?")
@@ -631,7 +631,7 @@ int Hermes::init(bool restarting) {
     bracket_factor = sqrt(coord->g_22) / (coord->J * Bxyz);
     SAVE_ONCE(bracket_factor);
   }else{
-    bracket_factor = 1.0;//sqrt(coord->g_22) / (coord->J * coord->Bxy);
+    bracket_factor = sqrt(coord->g_22) / (coord->J * coord->Bxy);
     SAVE_ONCE(bracket_factor);
   }
   
@@ -837,7 +837,7 @@ int Hermes::init(bool restarting) {
     OPTION(optsc, newXZsolver, false);
     if (newXZsolver) {
       // Test new LaplaceXZ solver
-      newSolver = LaplaceXZ::create(mesh);
+      newSolver = LaplaceXZ::create(bout::globals::mesh);
       // Set coefficients for Boussinesq solve
       newSolver->setCoefs(Field3D(1.0), Field3D(0.0));
     } else {
@@ -850,7 +850,7 @@ int Hermes::init(bool restarting) {
   }
 
   // Apar (Psi) solver
-  aparSolver = LaplaceXZ::create(mesh, &opt["aparSolver"], CELL_CENTRE);
+  aparSolver = LaplaceXZ::create(bout::globals::mesh, &opt["aparSolver"], CELL_CENTRE);
   if (split_n0_psi) {
     // Use another XY solver for n=0 psi component
     aparXY = new LaplaceXY(mesh);
@@ -1129,7 +1129,7 @@ int Hermes::rhs(BoutReal t) {
 
         // aparSolver->setCoefA(-Ne*0.5*mi_me*beta_e);
         Field2D NDC = DC(Ne);
-        aparSolver->setCoefs(1.0, -NDC * 0.5 * mi_me * beta_e);
+        aparSolver->setCoefs(Field3D(1.0), -NDC * 0.5 * mi_me * beta_e);
         // aparSolver->setCoefs(1.0, -Ne*0.5*mi_me*beta_e);
         if (split_n0_psi) {
           // Solve n=0 component separately
@@ -1141,7 +1141,7 @@ int Hermes::rhs(BoutReal t) {
 
           psi = aparSolver->solve(-NDC * VePsi - JDC, psi - psi2D) + psi2D;
         } else {
-          psi = aparSolver->solve(-NDC * VePsi, psi);
+          psi = aparSolver->solve(Field3D(-NDC * VePsi), Field3D(psi));
           // psi = aparSolver->solve(-Ne*VePsi, psi);
         }
 
@@ -1160,7 +1160,14 @@ int Hermes::rhs(BoutReal t) {
         psi = VePsi / (0.5 * mi_me * beta_e);
 
         // Ve = (NVi - Delp2(psi)) / Nelim;
-        Jpar = FV::Div_a_Laplace_perp(1.0, psi);
+	if(fci_transform){
+	  Field3D atmp = 1.0;
+	  mesh->communicate(atmp,psi);
+	  Jpar = FV::Div_a_Laplace_perp(atmp, psi);
+	} else {
+	  Jpar = FV::Div_a_Laplace_perp(1.0, psi);
+	}
+
         mesh->communicate(Jpar);
 
         Jpar.applyBoundary(t);
@@ -2219,14 +2226,16 @@ int Hermes::rhs(BoutReal t) {
              Curlb_B * Grad(Pi) / Nelim); // q perpendicular
         // q parallel
 
-    if(!fci_transform){
+    if(fci_transform){
+      Coordinates::FieldMetric B32kappa_ipar = B32 * kappa_ipar;
+      mesh->communicate(B32kappa_ipar, Tifree);
       Pi_ciperp +=
         0.96 * tau_i * (1.42 / B32) *
-	FV::Div_par_K_Grad_par(B32 * kappa_ipar, Tifree);
+	Div_par_K_Grad_par(B32kappa_ipar, Tifree);
     }else{
       Pi_ciperp +=
         0.96 * tau_i * (1.42 / B32) *
-	B32*kappa_ipar*Div_par(Tifree);
+	FV::Div_par_K_Grad_par(B32 * kappa_ipar, Tifree);
     }
     
     Pi_ciperp -=
@@ -2417,7 +2426,7 @@ int Hermes::rhs(BoutReal t) {
     // help prevent negative density regions
     if(fci_transform){
       mesh->communicate(Ne);
-      // ddt(Ne) += Div_par_K_Grad_par(SQ(coord->dy) * coord->g_22 * 1e-4 / Nelim, Ne);
+      ddt(Ne) += Div_par_K_Grad_par(SQ(coord->dy) * coord->g_22 * 1e-4 / Nelim, Ne);
     }else{
       ddt(Ne) += FV::Div_par_K_Grad_par(SQ(coord->dy) * coord->g_22 * 1e-4 / Nelim, Ne);
     }      
@@ -2489,7 +2498,7 @@ int Hermes::rhs(BoutReal t) {
 	ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
       }else{
 	Field3D inv_2sqrtb = 0.5 / SQ(coord->Bxy);
-	mesh->communicate(inv_2sqrtb);
+	mesh->communicate(inv_2sqrtb,vEdotGradPi);
 	ddt(Vort) -= FV::Div_a_Laplace_perp(inv_2sqrtb, vEdotGradPi);
       }
       
@@ -2730,8 +2739,8 @@ int Hermes::rhs(BoutReal t) {
 	// The parallel part is solved as a diffusion term
 	Coordinates::FieldMetric sqrtBVi = sqrtB * Vi;
 	mesh->communicate(sqrtBVi);
-	// ddt(NVi) += 1.28 * sqrtB *
-	//   Div_par_K_Grad_par(Pi * tau_i / (coord->Bxy), sqrtBVi);
+	ddt(NVi) += 1.28 * sqrtB *
+	  Div_par_K_Grad_par(Pi * tau_i / (coord->Bxy), sqrtBVi);
       }else{
 	ddt(NVi) += 1.28 * sqrtB *
 	  FV::Div_par_K_Grad_par(Pi * tau_i / (coord->Bxy), sqrtB * Vi);
@@ -2787,7 +2796,7 @@ int Hermes::rhs(BoutReal t) {
       // help prevent negative density regions
       if(fci_transform){
 	mesh->communicate(NVi);
-	// ddt(NVi) += Div_par_K_Grad_par(SQ(coord->dy) * coord->g_22 * 1e-4 / Nelim, NVi);
+	ddt(NVi) += Div_par_K_Grad_par(SQ(coord->dy) * coord->g_22 * 1e-4 / Nelim, NVi);
       }else{
 	ddt(NVi) += FV::Div_par_K_Grad_par(SQ(coord->dy) * coord->g_22 * 1e-4 / Nelim, NVi);
       }	
@@ -2813,7 +2822,7 @@ int Hermes::rhs(BoutReal t) {
     // Parallel flow
     if (currents) {
       // Like Ne term, parallel wave speed increased
-      if(!fci_transform){
+      if(fci_transform){
 	Field3D peve = Pe*Ve;
 	mesh->communicate(peve);
 	ddt(Pe) -= Div_par(peve);

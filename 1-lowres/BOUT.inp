@@ -1,6 +1,6 @@
 
 NOUT = 100
-TIMESTEP = 10
+TIMESTEP = 500
 
 TwistShift = false  # use twist-shift condition?
 ballooning = false  # ballooning transformation?
@@ -162,15 +162,16 @@ j_diamag       = false  # Diamagnetic current: Vort <-> Pe
 j_par          = false  # Parallel current:    Vort <-> Psi
 
 evolve_te = false
-evolve_ti = true
+evolve_ti = false
 
 pe_par         = true  # Parallel pressure gradient: Pe <-> Psi
 resistivity    = true  # Resistivity: Psi -> Pe
-thermal_flux   = true
-thermal_force  = true
+thermal_flux   = false
+thermal_force  = false
+electron_ion_transfer = false
 electron_viscosity = false
 ion_viscosity  = false  # Ion parallel viscosity
-thermal_conduction = true
+thermal_conduction = false
 
 frecycle = 0.0  # Neutral gas recycling fraction
 

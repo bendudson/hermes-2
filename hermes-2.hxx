@@ -182,6 +182,8 @@ private:
   BoutReal floor_num_cs; // Apply a floor to the numerical sound speed
   bool vepsi_dissipation; // Dissipation term in VePsi equation
   bool vort_dissipation; // Dissipation term in Vorticity equation
+
+  BoutReal vi_num_diff; // Numerical perpendicular diffusion
   
   // Sources and profiles
   

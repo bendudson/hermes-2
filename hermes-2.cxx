@@ -339,6 +339,10 @@ int Hermes::init(bool restarting) {
   OPTION(optsc, vepsi_dissipation, false);
   OPTION(optsc, vort_dissipation, false);
 
+  vi_num_diff = optsc["vi_num_diff"]
+                    .doc("Numerical diffusion in X-Z plane. < 0 => off.")
+                    .withDefault(1e-4);
+
   OPTION(optsc, ne_hyper_z, -1.0);
   OPTION(optsc, pe_hyper_z, -1.0);
 
@@ -2838,6 +2842,11 @@ int Hermes::rhs(BoutReal t) {
     }
     if (low_n_diffuse_perp) {
       ddt(NVi) += Div_Perp_Lap_FV_Index(1e-4 / Nelim, NVi, ne_bndry_flux);
+    }
+
+    if (vi_num_diff > 0.0) {
+      // Numerical perpendicular diffusion
+      ddt(NVi) += Div_Perp_Lap_FV_Index(vi_num_diff * Nelim, Vi, ne_bndry_flux);
     }
   }
 

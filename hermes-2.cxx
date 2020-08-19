@@ -494,13 +494,38 @@ int Hermes::init(bool restarting) {
   Spe += (2. / 3) * qmid;
 
   // Add variables to solver
-  SOLVE_FOR(Ne, Pe, Pi);
-  EvolvingVars.add(Ne, Pe, Pi);
+  SOLVE_FOR(Ne);
+  EvolvingVars.add(Ne);
 
   if (output_ddt) {
-    SAVE_REPEAT(ddt(Ne), ddt(Pe), ddt(Pi));
+    SAVE_REPEAT(ddt(Ne));
   }
-
+  
+  // Temperature evolution can be turned off
+  // so that Pe = Ne and/or Pi = Ne
+  evolve_te = optsc["evolve_te"].doc("Evolve electron temperature?")
+    .withDefault<bool>(true);
+  if (evolve_te) {
+    SOLVE_FOR(Pe);
+    EvolvingVars.add(Pe);
+    if (output_ddt) {
+      SAVE_REPEAT(ddt(Pe));
+    }
+  } else {
+    Pe = Ne;
+  }
+  evolve_ti = optsc["evolve_ti"].doc("Evolve ion temperature?")
+    .withDefault<bool>(true);
+  if (evolve_ti) {
+    SOLVE_FOR(Pi);
+    EvolvingVars.add(Pi);
+    if (output_ddt) {
+      SAVE_REPEAT(ddt(Pi));
+    }
+  } else {
+    Pi = Ne;
+  }
+  
   if (j_par || j_diamag) {
     // Have a source of vorticity
     solver->add(Vort, "Vort");
@@ -929,6 +954,11 @@ int Hermes::rhs(BoutReal t) {
 
   Field3D Nelim = floor(Ne, 1e-5);
 
+  if (!evolve_te) {
+    Pe = copy(Nelim);  // Fixed electron temperature
+    mesh->communicate(Pe);
+  }
+  
   Te = Pe / Nelim;
   Vi = NVi / Nelim;
 
@@ -939,6 +969,11 @@ int Hermes::rhs(BoutReal t) {
   Field3D logPelim = log(Pelim);
   logPelim.applyBoundary("neumann");
 
+  if (!evolve_ti) {
+    Pi = copy(Nelim);  // Fixed ion temperature
+    mesh->communicate(Pi);
+  }
+  
   Ti = Pi / Nelim;
   Tilim = floor(Ti, 0.1 / Tnorm);
   Field3D Pilim = Tilim * Nelim;
@@ -2810,617 +2845,609 @@ int Hermes::rhs(BoutReal t) {
   // Pressure equation
   TRACE("Electron pressure");
 
-  if (currents) {
-    // Divergence of heat flux due to ExB advection
-    ddt(Pe) =
-        -Div_n_bxGrad_f_B_XPPM(Pe, phi, pe_bndry_flux, poloidal_flows, true);
-  } else {
-    ddt(Pe) = 0.0;
-  }
+  if (evolve_te) {
 
-  if (parallel_flow_p_term) {
-    // Parallel flow
     if (currents) {
-      // Like Ne term, parallel wave speed increased
-      if(fci_transform){
-	Field3D peve = Pe*Ve;
-	mesh->communicate(peve);
-	ddt(Pe) -= Div_par(peve);
-      }else{
-	ddt(Pe) -= FV::Div_par(Pe, Ve, sqrt(mi_me) * sound_speed);
-      }
+      // Divergence of heat flux due to ExB advection
+      ddt(Pe) = -Div_n_bxGrad_f_B_XPPM(Pe, phi, pe_bndry_flux, poloidal_flows, true);
     } else {
-      if(fci_transform){
-	Field3D peve = Pe*Ve;
-	mesh->communicate(peve);
-	ddt(Pe) -= Div_par(peve);
-      }else{
-	ddt(Pe) -= FV::Div_par(Pe, Ve, sound_speed);
-      }
-    }
-  }
-
-  if (j_diamag) { // Diamagnetic flow
-    // Magnetic drift (curvature) divergence.
-    if(fci_transform){
-      Vector3D petelimcb = Pe*-Telim*Curlb_B;
-      mesh->communicate(petelimcb);
-      ddt(Pe) -= (5. / 3) * Div(petelimcb);
-    }else{
-      ddt(Pe) -= (5. / 3) * FV::Div_f_v(Pe, -Telim * Curlb_B, pe_bndry_flux);
+      ddt(Pe) = 0.0;
     }
 
-    // This term energetically balances diamagnetic term
-    // in the vorticity equation
-    ddt(Pe) -= (2. / 3) * Pe * (Curlb_B * Grad(phi));
-  }
-
-  // Parallel heat conduction
-  if (thermal_conduction) {
-    if(fci_transform){
-      mesh->communicate(kappa_epar,Te);
-      ddt(Pe) += (2. / 3) * Div_par_K_Grad_par(kappa_epar, Te);
-    }else{
-      ddt(Pe) += (2. / 3) * FV::Div_par_K_Grad_par(kappa_epar, Te);
-    }
-  }
-
-  if (thermal_flux) {
-    // Parallel heat convection
-    if(fci_transform){
-      Field3D tejpar = Te*Jpar;
-      mesh->communicate(tejpar);
-      ddt(Pe) += (2. / 3) * 0.71 * Div_parP(tejpar);
-    }else{
-      ddt(Pe) += (2. / 3) * 0.71 * Div_parP(Te * Jpar);
-    }
-  }
-
-  if (currents && resistivity) {
-    // Ohmic heating
-    ddt(Pe) += nu * Jpar * (Jpar - Jpar0) / Nelim;
-  }
-
-  if (pe_hyper_z > 0.0) {
-    ddt(Pe) -= pe_hyper_z * SQ(SQ(coord->dz)) * D4DZ4(Pe);
-  }
-
-  ///////////////////////////////////
-  // Heat transmission through sheath
-  // Note: Have to calculate in field-aligned coordinates
-  Field3D Ne_FA = Ne;
-  Field3D Te_FA = Te;
-  Field3D Ti_FA = Ti;
-  if (!fci_transform){
-    Field3D Ne_FA = toFieldAligned(Ne);
-    Field3D Te_FA = toFieldAligned(Te);
-    Field3D Ti_FA = toFieldAligned(Ti);
-  }
-  
-  wall_power = 0.0; // Diagnostic output
-  if (sheath_yup) {
-    TRACE("electron sheath yup heat transmission");
-
-    Field3D sheath_dpe{zeroFrom(Ne_FA)}; // Field aligned
-
-    switch (sheath_model) {
-    case 0:
-    case 2:
-    case 3: {
-      for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
-          // Temperature and density at the sheath entrance
-          BoutReal tesheath = floor(
-              0.5 * (Te_FA(r.ind, mesh->yend, jz) + Te_FA(r.ind, mesh->yend + 1, jz)),
-              0.0);
-          BoutReal tisheath = floor(
-              0.5 * (Ti_FA(r.ind, mesh->yend, jz) + Ti_FA(r.ind, mesh->yend + 1, jz)),
-              0.0);
-          BoutReal nesheath = floor(
-              0.5 * (Ne_FA(r.ind, mesh->yend, jz) + Ne_FA(r.ind, mesh->yend + 1, jz)),
-              0.0);
-
-          // Sound speed (normalised units)
-          BoutReal Cs = sqrt(tesheath + tisheath);
-
-          // Heat flux
-          BoutReal q = (sheath_gamma_e - 1.5) * tesheath * nesheath * Cs;
-
-          // Multiply by cell area to get power
-          BoutReal flux = q * (coord->J(r.ind, mesh->yend, jz) +
-                               coord->J(r.ind, mesh->yend + 1,jz)) /
-	    (sqrt(coord->g_22(r.ind, mesh->yend,jz)) +
-	     sqrt(coord->g_22(r.ind, mesh->yend + 1,jz)));
-
-          // Divide by volume of cell, and 2/3 to get pressure
-          BoutReal power =
-	    flux / (coord->dy(r.ind, mesh->yend,jz) * coord->J(r.ind, mesh->yend,jz));
-          sheath_dpe(r.ind, mesh->yend, jz) = -(2. / 3) * power;
-          wall_power(r.ind, mesh->yend) += power;
+    if (parallel_flow_p_term) {
+      // Parallel flow
+      if (currents) {
+        // Like Ne term, parallel wave speed increased
+        if (fci_transform) {
+          Field3D peve = Pe * Ve;
+          mesh->communicate(peve);
+          ddt(Pe) -= Div_par(peve);
+        } else {
+          ddt(Pe) -= FV::Div_par(Pe, Ve, sqrt(mi_me) * sound_speed);
+        }
+      } else {
+        if (fci_transform) {
+          Field3D peve = Pe * Ve;
+          mesh->communicate(peve);
+          ddt(Pe) -= Div_par(peve);
+        } else {
+          ddt(Pe) -= FV::Div_par(Pe, Ve, sound_speed);
         }
       }
-      break;
     }
-    }
-    if (!fci_transform){
-      ddt(Pe) += fromFieldAligned(sheath_dpe);
-    }else{
-      ddt(Pe) += sheath_dpe;
-    }
-  }
-  if (sheath_ydown) {
-    TRACE("electron sheath ydown heat transmission");
 
-    Field3D sheath_dpe{zeroFrom(Te_FA)};
-
-    switch (sheath_model) {
-    case 0:
-    case 2:
-    case 3: {
-      for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
-          // Temperature and density at the sheath entrance
-          BoutReal tesheath = floor(0.5 * (Te_FA(r.ind, mesh->ystart, jz) +
-                                           Te_FA(r.ind, mesh->ystart - 1, jz)),
-                                    0.0);
-          BoutReal tisheath = floor(0.5 * (Ti_FA(r.ind, mesh->ystart, jz) +
-                                           Ti_FA(r.ind, mesh->ystart - 1, jz)),
-                                    0.0);
-          BoutReal nesheath = floor(0.5 * (Ne_FA(r.ind, mesh->ystart, jz) +
-                                           Ne_FA(r.ind, mesh->ystart - 1, jz)),
-                                    0.0);
-
-          // Sound speed (normalised units)
-          BoutReal Cs = sqrt(tesheath + tisheath);
-
-          // Heat flux
-          BoutReal q =
-              (sheath_gamma_e - 1.5) * tesheath * nesheath * Cs; // NB: positive
-
-          // Multiply by cell area to get power
-          BoutReal flux = q * (coord->J(r.ind, mesh->ystart,jz) +
-                               coord->J(r.ind, mesh->ystart - 1,jz)) /
-	    (sqrt(coord->g_22(r.ind, mesh->ystart,jz)) +
-	     sqrt(coord->g_22(r.ind, mesh->ystart - 1,jz)));
-
-          // Divide by volume of cell, and 2/3 to get pressure
-          BoutReal power = flux / (coord->dy(r.ind, mesh->ystart,jz) *
-                                   coord->J(r.ind, mesh->ystart,jz));
-          sheath_dpe(r.ind, mesh->ystart, jz) = -(2. / 3) * power;
-          wall_power(r.ind, mesh->ystart) += power;
-        }
+    if (j_diamag) { // Diamagnetic flow
+      // Magnetic drift (curvature) divergence.
+      if (fci_transform) {
+        Vector3D petelimcb = Pe * -Telim * Curlb_B;
+        mesh->communicate(petelimcb);
+        ddt(Pe) -= (5. / 3) * Div(petelimcb);
+      } else {
+        ddt(Pe) -= (5. / 3) * FV::Div_f_v(Pe, -Telim * Curlb_B, pe_bndry_flux);
       }
-      break;
+
+      // This term energetically balances diamagnetic term
+      // in the vorticity equation
+      ddt(Pe) -= (2. / 3) * Pe * (Curlb_B * Grad(phi));
     }
+
+    // Parallel heat conduction
+    if (thermal_conduction) {
+      if (fci_transform) {
+        mesh->communicate(kappa_epar, Te);
+        ddt(Pe) += (2. / 3) * Div_par_K_Grad_par(kappa_epar, Te);
+      } else {
+        ddt(Pe) += (2. / 3) * FV::Div_par_K_Grad_par(kappa_epar, Te);
+      }
     }
-    if (!fci_transform){
-      ddt(Pe) += fromFieldAligned(sheath_dpe);
-    }else{
-      ddt(Pe) += sheath_dpe;
+
+    if (thermal_flux) {
+      // Parallel heat convection
+      if (fci_transform) {
+        Field3D tejpar = Te * Jpar;
+        mesh->communicate(tejpar);
+        ddt(Pe) += (2. / 3) * 0.71 * Div_parP(tejpar);
+      } else {
+        ddt(Pe) += (2. / 3) * 0.71 * Div_parP(Te * Jpar);
+      }
     }
-  }
-  // Transfer and source terms
-  if (thermal_force) {
-    if(fci_transform){mesh->communicate(Te);}
-    ddt(Pe) -= (2. / 3) * 0.71 * Jpar * Grad_parP(Te);
-  }
 
-  if (pe_par_p_term) {
-    // This term balances energetically the pressure term
-    // in Ohm's law
-    if(fci_transform){mesh->communicate(Ve);}
-    ddt(Pe) -= (2. / 3) * Pelim * Div_par(Ve);
-  }
-  if (ramp_mesh && (t < ramp_timescale)) {
-    ddt(Pe) += PeTarget / ramp_timescale;
-  }
+    if (currents && resistivity) {
+      // Ohmic heating
+      ddt(Pe) += nu * Jpar * (Jpar - Jpar0) / Nelim;
+    }
 
-  //////////////////////
-  // Classical diffusion
+    if (pe_hyper_z > 0.0) {
+      ddt(Pe) -= pe_hyper_z * SQ(SQ(coord->dz)) * D4DZ4(Pe);
+    }
 
-  if (classical_diffusion) {
+    ///////////////////////////////////
+    // Heat transmission through sheath
 
-    // Combined resistive drift and cross-field heat diffusion
-    // nu_rho2 = nu_ei * rho_e^2 in normalised units
-    Field3D nu_rho2 = Telim / (tau_e * mi_me * SQ(coord->Bxy));
+    wall_power = 0.0; // Diagnostic output
+    if (sheath_yup) {
+      TRACE("electron sheath yup heat transmission");
 
-    ddt(Pe) +=
-        (2. / 3) * (FV::Div_a_Laplace_perp(nu_rho2, Pe + Pi) +
-                    (11. / 12) * FV::Div_a_Laplace_perp(nu_rho2 * Ne, Te));
-  }
+      switch (sheath_model) {
+      case 0:
+      case 2:
+      case 3: {
+        for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
+          for (int jz = 0; jz < mesh->LocalNz; jz++) {
+            // Temperature and density at the sheath entrance
+            BoutReal tesheath = floor(
+                0.5 * (Te(r.ind, mesh->yend, jz) + Te.yup()(r.ind, mesh->yend + 1, jz)),
+                0.0);
+            BoutReal tisheath = floor(
+                0.5 * (Ti(r.ind, mesh->yend, jz) + Ti.yup()(r.ind, mesh->yend + 1, jz)),
+                0.0);
+            BoutReal nesheath = floor(
+                0.5 * (Ne(r.ind, mesh->yend, jz) + Ne.yup()(r.ind, mesh->yend + 1, jz)),
+                0.0);
 
-  //////////////////////
-  // Anomalous diffusion
+            // Sound speed (normalised units)
+            BoutReal Cs = sqrt(tesheath + tisheath);
 
-  if ((anomalous_D > 0.0) && anomalous_D_pepi) {
-    ddt(Pe) += FV::Div_a_Laplace_perp(anomalous_D * DC(Te), DC(Ne));
-  }
-  if (anomalous_chi > 0.0) {
-    ddt(Pe) += (2. / 3) * FV::Div_a_Laplace_perp(anomalous_chi * DC(Ne), DC(Te));
-  }
+            // Heat flux
+            BoutReal q = (sheath_gamma_e - 1.5) * tesheath * nesheath * Cs;
 
-  //////////////////////
-  // Sources
+            // Multiply by cell area to get power
+            BoutReal flux =
+                q
+                * (coord->J(r.ind, mesh->yend, jz) + coord->J(r.ind, mesh->yend + 1, jz))
+                / (sqrt(coord->g_22(r.ind, mesh->yend, jz))
+                   + sqrt(coord->g_22(r.ind, mesh->yend + 1, jz)));
 
-  if (adapt_source) {
-    // Add source. Ensure that sink will go to zero as Pe -> 0
-    Field2D PeErr = averageY(DC(Pe) - PeTarget);
-
-    if (core_sources) {
-      // Sources only in core
-
-      ddt(Spe) = 0.0;
-      for (int x = mesh->xstart; x <= mesh->xend; x++) {
-        if (!mesh->periodicY(x))
-          continue; // Not periodic, so skip
-
-        for (int y = mesh->ystart; y <= mesh->yend; y++) {
-          Spe(x, y) -= source_p * PeErr(x, y);
-          ddt(Spe)(x, y) = -source_i * PeErr(x, y);
-
-          if (Spe(x, y) < 0.0) {
-            Spe(x, y) = 0.0;
-            if (ddt(Spe)(x, y) < 0.0)
-              ddt(Spe)(x, y) = 0.0;
+            // Divide by volume of cell, and 2/3 to get pressure
+            BoutReal power =
+                flux
+                / (coord->dy(r.ind, mesh->yend, jz) * coord->J(r.ind, mesh->yend, jz));
+            ddt(Pe)(r.ind, mesh->yend, jz) -= (2. / 3) * power;
+            wall_power(r.ind, mesh->yend) += power;
           }
         }
+        break;
       }
-
-      if (energy_source) {
-        // Add the same amount of energy to each particle
-        PeSource = Spe * Nelim / DC(Nelim);
-      } else {
-        PeSource = Spe;
-      }
-    } else {
-
-      Spe -= source_p * PeErr / PeTarget;
-      ddt(Spe) = -source_i * PeErr;
-
-      if (energy_source) {
-        // Add the same amount of energy to each particle
-        PeSource = Spe * Nelim / DC(Nelim);
-      } else {
-        PeSource = Spe * where(Spe, PeTarget, Pe);
       }
     }
-    
-    if (source_vary_g11) {
-      PeSource *= g11norm;
-    }
-    
-  } else {
-    // Not adapting sources
+    if (sheath_ydown) {
+      TRACE("electron sheath ydown heat transmission");
 
-    if (energy_source) {
-      // Add the same amount of energy to each particle
-      PeSource = Spe * Nelim / DC(Nelim);
-      
+      switch (sheath_model) {
+      case 0:
+      case 2:
+      case 3: {
+        for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
+          for (int jz = 0; jz < mesh->LocalNz; jz++) {
+            // Temperature and density at the sheath entrance
+            BoutReal tesheath = floor(0.5
+                                          * (Te(r.ind, mesh->ystart, jz)
+                                             + Te.ydown()(r.ind, mesh->ystart - 1, jz)),
+                                      0.0);
+            BoutReal tisheath = floor(0.5
+                                          * (Ti(r.ind, mesh->ystart, jz)
+                                             + Ti.ydown()(r.ind, mesh->ystart - 1, jz)),
+                                      0.0);
+            BoutReal nesheath = floor(0.5
+                                          * (Ne(r.ind, mesh->ystart, jz)
+                                             + Ne.ydown()(r.ind, mesh->ystart - 1, jz)),
+                                      0.0);
+
+            // Sound speed (normalised units)
+            BoutReal Cs = sqrt(tesheath + tisheath);
+
+            // Heat flux
+            BoutReal q =
+                (sheath_gamma_e - 1.5) * tesheath * nesheath * Cs; // NB: positive
+
+            // Multiply by cell area to get power
+            BoutReal flux = q
+                            * (coord->J(r.ind, mesh->ystart, jz)
+                               + coord->J(r.ind, mesh->ystart - 1, jz))
+                            / (sqrt(coord->g_22(r.ind, mesh->ystart, jz))
+                               + sqrt(coord->g_22(r.ind, mesh->ystart - 1, jz)));
+
+            // Divide by volume of cell, and 2/3 to get pressure
+            BoutReal power = flux
+                             / (coord->dy(r.ind, mesh->ystart, jz)
+                                * coord->J(r.ind, mesh->ystart, jz));
+            ddt(Pe)(r.ind, mesh->ystart, jz) -= (2. / 3) * power;
+            wall_power(r.ind, mesh->ystart) += power;
+          }
+        }
+        break;
+      }
+      }
+    }
+    // Transfer and source terms
+    if (thermal_force) {
+      if (fci_transform) {
+        mesh->communicate(Te);
+      }
+      ddt(Pe) -= (2. / 3) * 0.71 * Jpar * Grad_parP(Te);
+    }
+
+    if (pe_par_p_term) {
+      // This term balances energetically the pressure term
+      // in Ohm's law
+      if (fci_transform) {
+        mesh->communicate(Ve);
+      }
+      ddt(Pe) -= (2. / 3) * Pelim * Div_par(Ve);
+    }
+    if (ramp_mesh && (t < ramp_timescale)) {
+      ddt(Pe) += PeTarget / ramp_timescale;
+    }
+
+    //////////////////////
+    // Classical diffusion
+
+    if (classical_diffusion) {
+
+      // Combined resistive drift and cross-field heat diffusion
+      // nu_rho2 = nu_ei * rho_e^2 in normalised units
+      Field3D nu_rho2 = Telim / (tau_e * mi_me * SQ(coord->Bxy));
+
+      ddt(Pe) += (2. / 3)
+                 * (FV::Div_a_Laplace_perp(nu_rho2, Pe + Pi)
+                    + (11. / 12) * FV::Div_a_Laplace_perp(nu_rho2 * Ne, Te));
+    }
+
+    //////////////////////
+    // Anomalous diffusion
+
+    if ((anomalous_D > 0.0) && anomalous_D_pepi) {
+      ddt(Pe) += FV::Div_a_Laplace_perp(anomalous_D * DC(Te), DC(Ne));
+    }
+    if (anomalous_chi > 0.0) {
+      ddt(Pe) += (2. / 3) * FV::Div_a_Laplace_perp(anomalous_chi * DC(Ne), DC(Te));
+    }
+
+    //////////////////////
+    // Sources
+
+    if (adapt_source) {
+      // Add source. Ensure that sink will go to zero as Pe -> 0
+      Field2D PeErr = averageY(DC(Pe) - PeTarget);
+
+      if (core_sources) {
+        // Sources only in core
+
+        ddt(Spe) = 0.0;
+        for (int x = mesh->xstart; x <= mesh->xend; x++) {
+          if (!mesh->periodicY(x))
+            continue; // Not periodic, so skip
+
+          for (int y = mesh->ystart; y <= mesh->yend; y++) {
+            Spe(x, y) -= source_p * PeErr(x, y);
+            ddt(Spe)(x, y) = -source_i * PeErr(x, y);
+
+            if (Spe(x, y) < 0.0) {
+              Spe(x, y) = 0.0;
+              if (ddt(Spe)(x, y) < 0.0)
+                ddt(Spe)(x, y) = 0.0;
+            }
+          }
+        }
+
+        if (energy_source) {
+          // Add the same amount of energy to each particle
+          PeSource = Spe * Nelim / DC(Nelim);
+        } else {
+          PeSource = Spe;
+        }
+      } else {
+
+        Spe -= source_p * PeErr / PeTarget;
+        ddt(Spe) = -source_i * PeErr;
+
+        if (energy_source) {
+          // Add the same amount of energy to each particle
+          PeSource = Spe * Nelim / DC(Nelim);
+        } else {
+          PeSource = Spe * where(Spe, PeTarget, Pe);
+        }
+      }
+
       if (source_vary_g11) {
         PeSource *= g11norm;
       }
-    } else {
-      // Add the same amount of energy per volume
-      // If no particle source added, then this can lead to
-      // a small number of particles with a lot of energy!
-    }
-  }
 
-  ddt(Pe) += PeSource;
+    } else {
+      // Not adapting sources
+
+      if (energy_source) {
+        // Add the same amount of energy to each particle
+        PeSource = Spe * Nelim / DC(Nelim);
+
+        if (source_vary_g11) {
+          PeSource *= g11norm;
+        }
+      } else {
+        // Add the same amount of energy per volume
+        // If no particle source added, then this can lead to
+        // a small number of particles with a lot of energy!
+      }
+    }
+
+    ddt(Pe) += PeSource;
+  } else {
+    ddt(Pe) = 0.0;
+  }
   
   ///////////////////////////////////////////////////////////
   // Ion pressure equation
   // Similar to electron pressure equation
   TRACE("Ion pressure");
+  
+  if (evolve_ti) {
 
-  if (currents) {
-    // ExB advection
-    ddt(Pi) =
-        -Div_n_bxGrad_f_B_XPPM(Pi, phi, pe_bndry_flux, poloidal_flows, true);
-  } else {
-    ddt(Pi) = 0.0;
-  }
-
-  // Parallel flow
-  if (parallel_flow_p_term) {
-    if(fci_transform){
-      Field3D pevi = Pe*Vi;
-      mesh->communicate(pevi);
-      ddt(Pe) -= Div_par(pevi);
-    }else{
-      ddt(Pi) -= FV::Div_par(Pi, Vi, sound_speed);
-    }
-  }
-
-  if (j_diamag) { // Diamagnetic flow
-    // Magnetic drift (curvature) divergence
-    if(fci_transform){
-      Vector3D pitilimcb = Pi*Tilim*Curlb_B;
-      mesh->communicate(pitilimcb);
-      ddt(Pe) -= (5. / 3) * Div(pitilimcb);//fci_curvature(-petilim);
-    }else{
-      ddt(Pi) -= (5. / 3) * FV::Div_f_v(Pi, Tilim * Curlb_B, pe_bndry_flux);
-    }
-
-    // Compression of ExB flow
-    // These terms energetically balances diamagnetic term
-    // in the vorticity equation
-    ddt(Pi) -= (2. / 3) * Pi * (Curlb_B * Grad(phi));
-
-    if(fci_transform){
-      Vector3D pipecb = (Pi+Pe) * Curlb_B;
-      mesh->communicate(pipecb);
-      ddt(Pi) += Pi* Div(pipecb); //fci_curvature(pipe);
-    }else{
-      ddt(Pi) += Pi * Div((Pe + Pi) * Curlb_B);
-    }
-
-  }
-
-  if (j_par) {
-    if(fci_transform){mesh->communicate(Pi);}
-    if (boussinesq) {
-      ddt(Pi) -= (2. / 3) * Jpar * Grad_parP(Pi);
+    if (currents) {
+      // ExB advection
+      ddt(Pi) = -Div_n_bxGrad_f_B_XPPM(Pi, phi, pe_bndry_flux, poloidal_flows, true);
     } else {
-      ddt(Pi) -= (2. / 3) * Jpar * Grad_parP(Pi) / Nelim;
+      ddt(Pi) = 0.0;
     }
-  }
 
-  // Parallel heat conduction
-  if (thermal_conduction) {
-    if(fci_transform){
-      mesh->communicate(kappa_ipar,Ti);
-      ddt(Pi) += (2. / 3) * Div_par_K_Grad_par(kappa_ipar, Ti);
-    }else{
-      ddt(Pi) += (2. / 3) * FV::Div_par_K_Grad_par(kappa_ipar, Ti);
-    }
-  }
-
-  // Parallel pressure gradients (sound waves)
-  if (pe_par_p_term) {
-    // This term balances energetically the pressure term
-    // in the parallel momentum equation
-    if(fci_transform){mesh->communicate(Vi);}
-    ddt(Pi) -= (2. / 3) * Pilim * Div_par(Vi);
-  }
-  
-  if (electron_ion_transfer) {
-    // Electron-ion heat transfer
-    Wi = (3. / mi_me) * Nelim * (Te - Ti) / tau_e;
-    ddt(Pi) += (2. / 3) * Wi;
-    ddt(Pe) -= (2. / 3) * Wi;
-  }
-  
-  //////////////////////
-  // Classical diffusion
-
-  if (classical_diffusion) {
-    // Cross-field heat conduction
-    // kappa_perp = 2 * n * nu_ii * rho_i^2
-
-    ddt(Pi) += (2. / 3) * FV::Div_a_Laplace_perp(
-                              2. * Pilim / (SQ(coord->Bxy) * tau_i), Ti);
-
-    // Resistive drift terms
-
-    // nu_rho2 = (Ti/Te) * nu_ei * rho_e^2 in normalised units
-    Field3D nu_rho2 = Tilim / (tau_e * mi_me * SQ(coord->Bxy));
-
-    ddt(Pi) += (5. / 3) *
-               (FV::Div_a_Laplace_perp(nu_rho2, Pe + Pi) -
-                (3. / 2) * FV::Div_a_Laplace_perp(nu_rho2 * Ne, Te));
-
-    // Collisional heating from perpendicular viscosity
-    // in the vorticity equation
-
-    if (currents) {
-      Vector3D Grad_perp_vort = Grad(Vort);
-      Grad_perp_vort.y = 0.0; // Zero parallel component
-      ddt(Pi) -= (2. / 3) * (3. / 10) * Tilim / (SQ(coord->Bxy) * tau_i) *
-                 (Grad_perp_vort * Grad(phi + Pi));
-    }
-  }
-
-  if (ion_viscosity) {
-    // Collisional heating due to parallel viscosity
-    ddt(Pi) += (2. / 3) * 1.28 * (Pi * tau_i / sqrtB) * Grad_par(sqrtB * Vi) * Div_par(Vi);
-    
-    if (currents) {
-      ddt(Pi) -= (4. / 9) * Pi_ciperp * Div_par(Vi);
-      //(4. / 9) * Vi * B32 * Grad_par(Pi_ciperp / B32);
-
-      ddt(Pi) -= (2. / 6) * Pi_ci * Curlb_B * Grad(phi + Pi);
-      ddt(Pi) += (2. / 9) * bracket(Pi_ci, phi + Pi, BRACKET_ARAKAWA)*bracket_factor;
-    }
-  }
-  
-  //////////////////////
-  // Anomalous diffusion
-
-  if ((anomalous_D > 0.0) && anomalous_D_pepi) {
-    ddt(Pi) += FV::Div_a_Laplace_perp(anomalous_D * DC(Ti), DC(Ne));
-  }
-
-  if (anomalous_chi > 0.0) {
-    ddt(Pi) +=
-        (2. / 3) * FV::Div_a_Laplace_perp(anomalous_chi * DC(Ne), DC(Ti));
-  }
-
-  ///////////////////////////////////
-  // Heat transmission through sheath
-
-  if (sheath_yup) {
-    TRACE("ion sheath yup heat transmission");
-    
-    Field3D sheath_dpi{zeroFrom(Te_FA)}; // Field aligned
-
-    switch (sheath_model) {
-    case 0:
-    case 2:
-    case 3: {
-      for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
-          // Temperature and density at the sheath entrance
-          BoutReal tesheath = floor(
-              0.5 * (Te_FA(r.ind, mesh->yend, jz) + Te_FA(r.ind, mesh->yend + 1, jz)),
-              0.0);
-          BoutReal tisheath = floor(
-              0.5 * (Ti_FA(r.ind, mesh->yend, jz) + Ti_FA(r.ind, mesh->yend + 1, jz)),
-              0.0);
-          BoutReal nesheath = floor(
-              0.5 * (Ne_FA(r.ind, mesh->yend, jz) + Ne_FA(r.ind, mesh->yend + 1, jz)),
-              0.0);
-
-          // Sound speed (normalised units)
-          BoutReal Cs = sqrt(tesheath + tisheath);
-
-          // Heat flux
-          BoutReal q = (sheath_gamma_i - 1.5) * tisheath * nesheath * Cs;
-
-          // Multiply by cell area to get power
-          BoutReal flux = q * (coord->J(r.ind, mesh->yend, jz) +
-                               coord->J(r.ind, mesh->yend + 1, jz)) /
-	    (sqrt(coord->g_22(r.ind, mesh->yend, jz)) +
-	     sqrt(coord->g_22(r.ind, mesh->yend + 1, jz)));
-
-          // Divide by volume of cell, and 2/3 to get pressure
-          BoutReal power =
-	    flux / (coord->dy(r.ind, mesh->yend, jz) * coord->J(r.ind, mesh->yend, jz));
-          sheath_dpi(r.ind, mesh->yend, jz) = -(2. / 3) * power;
-          wall_power(r.ind, mesh->yend) += power;
-        }
+    // Parallel flow
+    if (parallel_flow_p_term) {
+      if (fci_transform) {
+        Field3D pevi = Pe * Vi;
+        mesh->communicate(pevi);
+        ddt(Pe) -= Div_par(pevi);
+      } else {
+        ddt(Pi) -= FV::Div_par(Pi, Vi, sound_speed);
       }
-      break;
     }
-    }
-    if (!fci_transform){
-      ddt(Pi) += fromFieldAligned(sheath_dpi);
-    }else{
-      ddt(Pi) += sheath_dpi;
-    }
-  }
-  if (sheath_ydown) {
-    TRACE("ion sheath ydown heat transmission");
 
-    Field3D sheath_dpi{zeroFrom(Ti_FA)};
-
-    switch (sheath_model) {
-    case 0:
-    case 2:
-    case 3: {
-      for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
-          // Temperature and density at the sheath entrance
-          BoutReal tesheath = floor(0.5 * (Te_FA(r.ind, mesh->ystart, jz) +
-                                           Te_FA(r.ind, mesh->ystart - 1, jz)),
-                                    0.0);
-          BoutReal tisheath = floor(0.5 * (Ti_FA(r.ind, mesh->ystart, jz) +
-                                           Ti_FA(r.ind, mesh->ystart - 1, jz)),
-                                    0.0);
-          BoutReal nesheath = floor(0.5 * (Ne_FA(r.ind, mesh->ystart, jz) +
-                                           Ne_FA(r.ind, mesh->ystart - 1, jz)),
-                                    0.0);
-
-          // Sound speed (normalised units)
-          BoutReal Cs = sqrt(tesheath + tisheath);
-
-          // Heat flux (positive)
-          BoutReal q = (sheath_gamma_i - 1.5) * tisheath * nesheath * Cs;
-
-          // Multiply by cell area to get power
-          BoutReal flux = q * (coord->J(r.ind, mesh->ystart, jz) +
-                               coord->J(r.ind, mesh->ystart - 1, jz)) /
-	    (sqrt(coord->g_22(r.ind, mesh->ystart,jz)) +
-	     sqrt(coord->g_22(r.ind, mesh->ystart - 1,jz)));
-
-          // Divide by volume of cell, and 2/3 to get pressure
-          BoutReal power = flux / (coord->dy(r.ind, mesh->ystart,jz) *
-                                   coord->J(r.ind, mesh->ystart,jz));
-          sheath_dpi(r.ind, mesh->ystart, jz) = -(2. / 3) * power;
-          wall_power(r.ind, mesh->ystart) += power;
-        }
+    if (j_diamag) { // Diamagnetic flow
+      // Magnetic drift (curvature) divergence
+      if (fci_transform) {
+        Vector3D pitilimcb = Pi * Tilim * Curlb_B;
+        mesh->communicate(pitilimcb);
+        ddt(Pe) -= (5. / 3) * Div(pitilimcb); // fci_curvature(-petilim);
+      } else {
+        ddt(Pi) -= (5. / 3) * FV::Div_f_v(Pi, Tilim * Curlb_B, pe_bndry_flux);
       }
-      break;
+
+      // Compression of ExB flow
+      // These terms energetically balances diamagnetic term
+      // in the vorticity equation
+      ddt(Pi) -= (2. / 3) * Pi * (Curlb_B * Grad(phi));
+
+      if (fci_transform) {
+        Vector3D pipecb = (Pi + Pe) * Curlb_B;
+        mesh->communicate(pipecb);
+        ddt(Pi) += Pi * Div(pipecb); // fci_curvature(pipe);
+      } else {
+        ddt(Pi) += Pi * Div((Pe + Pi) * Curlb_B);
+      }
     }
+
+    if (j_par) {
+      if (fci_transform) {
+        mesh->communicate(Pi);
+      }
+      if (boussinesq) {
+        ddt(Pi) -= (2. / 3) * Jpar * Grad_parP(Pi);
+      } else {
+        ddt(Pi) -= (2. / 3) * Jpar * Grad_parP(Pi) / Nelim;
+      }
     }
-    if (!fci_transform){
-      ddt(Pi) += fromFieldAligned(sheath_dpi);
-    }else{
-      ddt(Pi) += sheath_dpi;
+
+    // Parallel heat conduction
+    if (thermal_conduction) {
+      if (fci_transform) {
+        mesh->communicate(kappa_ipar, Ti);
+        ddt(Pi) += (2. / 3) * Div_par_K_Grad_par(kappa_ipar, Ti);
+      } else {
+        ddt(Pi) += (2. / 3) * FV::Div_par_K_Grad_par(kappa_ipar, Ti);
+      }
     }
-    
-  }
 
-  //////////////////////
-  // Sources
+    // Parallel pressure gradients (sound waves)
+    if (pe_par_p_term) {
+      // This term balances energetically the pressure term
+      // in the parallel momentum equation
+      if (fci_transform) {
+        mesh->communicate(Vi);
+      }
+      ddt(Pi) -= (2. / 3) * Pilim * Div_par(Vi);
+    }
 
-  if (adapt_source) {
-    // Add source. Ensure that sink will go to zero as Pe -> 0
-    Field2D PiErr = averageY(DC(Pi) - PiTarget);
+    if (electron_ion_transfer) {
+      // Electron-ion heat transfer
+      Wi = (3. / mi_me) * Nelim * (Te - Ti) / tau_e;
+      ddt(Pi) += (2. / 3) * Wi;
+      ddt(Pe) -= (2. / 3) * Wi;
+    }
 
-    if (core_sources) {
-      // Sources only in core
+    //////////////////////
+    // Classical diffusion
 
-      ddt(Spi) = 0.0;
-      for (int x = mesh->xstart; x <= mesh->xend; x++) {
-        if (!mesh->periodicY(x))
-          continue; // Not periodic, so skip
+    if (classical_diffusion) {
+      // Cross-field heat conduction
+      // kappa_perp = 2 * n * nu_ii * rho_i^2
 
-        for (int y = mesh->ystart; y <= mesh->yend; y++) {
-          Spi(x, y) -= source_p * PiErr(x, y);
-          ddt(Spi)(x, y) = -source_i * PiErr(x, y);
+      ddt(Pi) +=
+          (2. / 3) * FV::Div_a_Laplace_perp(2. * Pilim / (SQ(coord->Bxy) * tau_i), Ti);
 
-          if (Spi(x, y) < 0.0) {
-            Spi(x, y) = 0.0;
-            if (ddt(Spi)(x, y) < 0.0)
-              ddt(Spi)(x, y) = 0.0;
+      // Resistive drift terms
+
+      // nu_rho2 = (Ti/Te) * nu_ei * rho_e^2 in normalised units
+      Field3D nu_rho2 = Tilim / (tau_e * mi_me * SQ(coord->Bxy));
+
+      ddt(Pi) += (5. / 3)
+                 * (FV::Div_a_Laplace_perp(nu_rho2, Pe + Pi)
+                    - (3. / 2) * FV::Div_a_Laplace_perp(nu_rho2 * Ne, Te));
+
+      // Collisional heating from perpendicular viscosity
+      // in the vorticity equation
+
+      if (currents) {
+        Vector3D Grad_perp_vort = Grad(Vort);
+        Grad_perp_vort.y = 0.0; // Zero parallel component
+        ddt(Pi) -= (2. / 3) * (3. / 10) * Tilim / (SQ(coord->Bxy) * tau_i)
+                   * (Grad_perp_vort * Grad(phi + Pi));
+      }
+    }
+
+    if (ion_viscosity) {
+      // Collisional heating due to parallel viscosity
+      ddt(Pi) +=
+          (2. / 3) * 1.28 * (Pi * tau_i / sqrtB) * Grad_par(sqrtB * Vi) * Div_par(Vi);
+
+      if (currents) {
+        ddt(Pi) -= (4. / 9) * Pi_ciperp * Div_par(Vi);
+        //(4. / 9) * Vi * B32 * Grad_par(Pi_ciperp / B32);
+
+        ddt(Pi) -= (2. / 6) * Pi_ci * Curlb_B * Grad(phi + Pi);
+        ddt(Pi) += (2. / 9) * bracket(Pi_ci, phi + Pi, BRACKET_ARAKAWA) * bracket_factor;
+      }
+    }
+
+    //////////////////////
+    // Anomalous diffusion
+
+    if ((anomalous_D > 0.0) && anomalous_D_pepi) {
+      ddt(Pi) += FV::Div_a_Laplace_perp(anomalous_D * DC(Ti), DC(Ne));
+    }
+
+    if (anomalous_chi > 0.0) {
+      ddt(Pi) += (2. / 3) * FV::Div_a_Laplace_perp(anomalous_chi * DC(Ne), DC(Ti));
+    }
+
+    ///////////////////////////////////
+    // Heat transmission through sheath
+
+    if (sheath_yup) {
+      TRACE("ion sheath yup heat transmission");
+
+      switch (sheath_model) {
+      case 0:
+      case 2:
+      case 3: {
+        for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
+          for (int jz = 0; jz < mesh->LocalNz; jz++) {
+            // Temperature and density at the sheath entrance
+            BoutReal tesheath = floor(
+                0.5 * (Te(r.ind, mesh->yend, jz) + Te.yup()(r.ind, mesh->yend + 1, jz)),
+                0.0);
+            BoutReal tisheath = floor(
+                0.5 * (Ti(r.ind, mesh->yend, jz) + Ti.yup()(r.ind, mesh->yend + 1, jz)),
+                0.0);
+            BoutReal nesheath = floor(
+                0.5 * (Ne(r.ind, mesh->yend, jz) + Ne.yup()(r.ind, mesh->yend + 1, jz)),
+                0.0);
+
+            // Sound speed (normalised units)
+            BoutReal Cs = sqrt(tesheath + tisheath);
+
+            // Heat flux
+            BoutReal q = (sheath_gamma_i - 1.5) * tisheath * nesheath * Cs;
+
+            // Multiply by cell area to get power
+            BoutReal flux =
+                q
+                * (coord->J(r.ind, mesh->yend, jz) + coord->J(r.ind, mesh->yend + 1, jz))
+                / (sqrt(coord->g_22(r.ind, mesh->yend, jz))
+                   + sqrt(coord->g_22(r.ind, mesh->yend + 1, jz)));
+
+            // Divide by volume of cell, and 2/3 to get pressure
+            BoutReal power =
+                flux
+                / (coord->dy(r.ind, mesh->yend, jz) * coord->J(r.ind, mesh->yend, jz));
+            ddt(Pi)(r.ind, mesh->yend, jz) -= (2. / 3) * power;
+            wall_power(r.ind, mesh->yend) += power;
           }
         }
+        break;
       }
-
-      if (energy_source) {
-        // Add the same amount of energy to each particle
-        PiSource = Spi * Nelim / DC(Nelim);
-      } else {
-        PiSource = Spi;
-      }
-    } else {
-
-      Spi -= source_p * PiErr / PiTarget;
-      ddt(Spi) = -source_i * PiErr;
-
-      if (energy_source) {
-        // Add the same amount of energy to each particle
-        PiSource = Spi * Nelim / DC(Nelim);
-      } else {
-        PiSource = Spi * where(Spi, PiTarget, Pi);
       }
     }
-    
-    if (source_vary_g11) {
-      PiSource *= g11norm;
-    }
-    
-  } else {
-    // Not adapting sources
+    if (sheath_ydown) {
+      TRACE("ion sheath ydown heat transmission");
 
-    if (energy_source) {
-      // Add the same amount of energy to each particle
-      PiSource = Spi * Nelim / DC(Nelim);
+      switch (sheath_model) {
+      case 0:
+      case 2:
+      case 3: {
+        for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
+          for (int jz = 0; jz < mesh->LocalNz; jz++) {
+            // Temperature and density at the sheath entrance
+            BoutReal tesheath = floor(0.5
+                                          * (Te(r.ind, mesh->ystart, jz)
+                                             + Te.ydown()(r.ind, mesh->ystart - 1, jz)),
+                                      0.0);
+            BoutReal tisheath = floor(0.5
+                                          * (Ti(r.ind, mesh->ystart, jz)
+                                             + Ti.ydown()(r.ind, mesh->ystart - 1, jz)),
+                                      0.0);
+            BoutReal nesheath = floor(0.5
+                                          * (Ne(r.ind, mesh->ystart, jz)
+                                             + Ne.ydown()(r.ind, mesh->ystart - 1, jz)),
+                                      0.0);
+
+            // Sound speed (normalised units)
+            BoutReal Cs = sqrt(tesheath + tisheath);
+
+            // Heat flux (positive)
+            BoutReal q = (sheath_gamma_i - 1.5) * tisheath * nesheath * Cs;
+
+            // Multiply by cell area to get power
+            BoutReal flux = q
+                            * (coord->J(r.ind, mesh->ystart, jz)
+                               + coord->J(r.ind, mesh->ystart - 1, jz))
+                            / (sqrt(coord->g_22(r.ind, mesh->ystart, jz))
+                               + sqrt(coord->g_22(r.ind, mesh->ystart - 1, jz)));
+
+            // Divide by volume of cell, and 2/3 to get pressure
+            BoutReal power = flux
+                             / (coord->dy(r.ind, mesh->ystart, jz)
+                                * coord->J(r.ind, mesh->ystart, jz));
+            ddt(Pi)(r.ind, mesh->ystart, jz) -= (2. / 3) * power;
+            wall_power(r.ind, mesh->ystart) += power;
+          }
+        }
+        break;
+      }
+      }
+    }
+
+    //////////////////////
+    // Sources
+
+    if (adapt_source) {
+      // Add source. Ensure that sink will go to zero as Pe -> 0
+      Field2D PiErr = averageY(DC(Pi) - PiTarget);
+
+      if (core_sources) {
+        // Sources only in core
+
+        ddt(Spi) = 0.0;
+        for (int x = mesh->xstart; x <= mesh->xend; x++) {
+          if (!mesh->periodicY(x))
+            continue; // Not periodic, so skip
+
+          for (int y = mesh->ystart; y <= mesh->yend; y++) {
+            Spi(x, y) -= source_p * PiErr(x, y);
+            ddt(Spi)(x, y) = -source_i * PiErr(x, y);
+
+            if (Spi(x, y) < 0.0) {
+              Spi(x, y) = 0.0;
+              if (ddt(Spi)(x, y) < 0.0)
+                ddt(Spi)(x, y) = 0.0;
+            }
+          }
+        }
+
+        if (energy_source) {
+          // Add the same amount of energy to each particle
+          PiSource = Spi * Nelim / DC(Nelim);
+        } else {
+          PiSource = Spi;
+        }
+      } else {
+
+        Spi -= source_p * PiErr / PiTarget;
+        ddt(Spi) = -source_i * PiErr;
+
+        if (energy_source) {
+          // Add the same amount of energy to each particle
+          PiSource = Spi * Nelim / DC(Nelim);
+        } else {
+          PiSource = Spi * where(Spi, PiTarget, Pi);
+        }
+      }
 
       if (source_vary_g11) {
         PiSource *= g11norm;
       }
-      
+
     } else {
-      // Add the same amount of energy per volume
-      // If no particle source added, then this can lead to
-      // a small number of particles with a lot of energy!
+      // Not adapting sources
+
+      if (energy_source) {
+        // Add the same amount of energy to each particle
+        PiSource = Spi * Nelim / DC(Nelim);
+
+        if (source_vary_g11) {
+          PiSource *= g11norm;
+        }
+
+      } else {
+        // Add the same amount of energy per volume
+        // If no particle source added, then this can lead to
+        // a small number of particles with a lot of energy!
+      }
     }
+
+    ddt(Pi) += PiSource;
+
+  } else {
+    ddt(Pi) = 0.0;
   }
-  
-  ddt(Pi) += PiSource;
-  
+
   ///////////////////////////////////////////////////////////
   // Radial buffer regions for turbulence simulations
 
@@ -3436,8 +3463,8 @@ int Hermes::rhs(BoutReal t) {
     if ((mesh->getGlobalXIndex(mesh->xstart) - mesh->xstart) < radial_inner_width) {
       // This processor contains points inside the inner radial boundary
 
-      int imax = mesh->xstart + radial_inner_width - 1 -
-                 (mesh->getGlobalXIndex(mesh->xstart) - mesh->xstart);
+      int imax = mesh->xstart + radial_inner_width - 1
+                 - (mesh->getGlobalXIndex(mesh->xstart) - mesh->xstart);
       if (imax > mesh->xend) {
         imax = mesh->xend;
       }
@@ -3458,23 +3485,23 @@ int Hermes::rhs(BoutReal t) {
 
         for (int j = mesh->ystart; j <= mesh->yend; ++j) {
           for (int k = 0; k < ncz; ++k) {
-	    BoutReal dx = coord->dx(i, j,k);
-	    BoutReal dx_xp = coord->dx(i + 1, j,k);
-	    BoutReal J = coord->J(i, j,k);
-	    BoutReal J_xp = coord->J(i + 1, j,k);
-	    
-	    // Calculate metric factors for radial fluxes
-	    BoutReal rad_flux_factor = 0.25 * (J + J_xp) * (dx + dx_xp);
-	    BoutReal x_factor = rad_flux_factor / (J * dx);
-	    BoutReal xp_factor = rad_flux_factor / (J_xp * dx_xp);
-	    // Relax towards constant value on flux surface
-	    
+            BoutReal dx = coord->dx(i, j, k);
+            BoutReal dx_xp = coord->dx(i + 1, j, k);
+            BoutReal J = coord->J(i, j, k);
+            BoutReal J_xp = coord->J(i + 1, j, k);
+
+            // Calculate metric factors for radial fluxes
+            BoutReal rad_flux_factor = 0.25 * (J + J_xp) * (dx + dx_xp);
+            BoutReal x_factor = rad_flux_factor / (J * dx);
+            BoutReal xp_factor = rad_flux_factor / (J_xp * dx_xp);
+            // Relax towards constant value on flux surface
+
             ddt(Pe)(i, j, k) -= D * (Pe(i, j, k) - PeDC(i, j));
             ddt(Pi)(i, j, k) -= D * (Pi(i, j, k) - PiDC(i, j));
             ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeDC(i, j));
             ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortDC(i, j));
             ddt(NVi)(i, j, k) -= D * NVi(i, j, k);
-            
+
             // Radial fluxes
             BoutReal f = D * (Ne(i + 1, j, k) - Ne(i, j, k));
             ddt(Ne)(i, j, k) += f * x_factor;
@@ -3498,12 +3525,11 @@ int Hermes::rhs(BoutReal t) {
     // Number of points in outer guard cells
     int nguard = mesh->LocalNx - mesh->xend - 1;
 
-    if (mesh->GlobalNx - nguard - mesh->getGlobalXIndex(mesh->xend) <=
-        radial_outer_width) {
+    if (mesh->GlobalNx - nguard - mesh->getGlobalXIndex(mesh->xend)
+        <= radial_outer_width) {
 
       // Outer boundary
-      int imin =
-          mesh->GlobalNx - nguard - radial_outer_width - mesh->getGlobalXIndex(0);
+      int imin = mesh->GlobalNx - nguard - radial_outer_width - mesh->getGlobalXIndex(0);
       if (imin < mesh->xstart) {
         imin = mesh->xstart;
       }
@@ -3512,25 +3538,25 @@ int Hermes::rhs(BoutReal t) {
 
         // position inside the boundary
         BoutReal pos =
-            static_cast<BoutReal>(mesh->GlobalNx - nguard - mesh->getGlobalXIndex(i)) -
-            0.5;
+            static_cast<BoutReal>(mesh->GlobalNx - nguard - mesh->getGlobalXIndex(i))
+            - 0.5;
 
         // Diffusion coefficient which increases towards the boundary
         BoutReal D = radial_buffer_D * (1. - pos / radial_outer_width);
 
         for (int j = mesh->ystart; j <= mesh->yend; ++j) {
           for (int k = 0; k < ncz; ++k) {
-	    BoutReal dx = coord->dx(i, j, k);
-	    BoutReal dx_xp = coord->dx(i + 1, j, k);
-	    BoutReal J = coord->J(i, j, k);
-	    BoutReal J_xp = coord->J(i + 1, j, k);
-	    
-	    // Calculate metric factors for radial fluxes
-	    BoutReal rad_flux_factor = 0.25 * (J + J_xp) * (dx + dx_xp);
-	    BoutReal x_factor = rad_flux_factor / (J * dx);
-	    BoutReal xp_factor = rad_flux_factor / (J_xp * dx_xp);
+            BoutReal dx = coord->dx(i, j, k);
+            BoutReal dx_xp = coord->dx(i + 1, j, k);
+            BoutReal J = coord->J(i, j, k);
+            BoutReal J_xp = coord->J(i + 1, j, k);
 
-	    ddt(Pe)(i, j, k) -= D * (Pe(i, j, k) - PeDC(i, j));
+            // Calculate metric factors for radial fluxes
+            BoutReal rad_flux_factor = 0.25 * (J + J_xp) * (dx + dx_xp);
+            BoutReal x_factor = rad_flux_factor / (J * dx);
+            BoutReal xp_factor = rad_flux_factor / (J_xp * dx_xp);
+
+            ddt(Pe)(i, j, k) -= D * (Pe(i, j, k) - PeDC(i, j));
             ddt(Pi)(i, j, k) -= D * (Pi(i, j, k) - PiDC(i, j));
             ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeDC(i, j));
             ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortDC(i, j));

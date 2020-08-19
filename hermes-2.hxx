@@ -96,6 +96,8 @@ private:
   
   // Switches
   bool evolve_plasma;   // Should plasma be evolved?
+  bool evolve_te;       // Evolve electron temperature?
+  bool evolve_ti;       // Evolve ion temperature?
   
   bool electromagnetic; // Include magnetic potential psi
   bool FiniteElMass;    // Finite Electron Mass

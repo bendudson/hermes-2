@@ -622,6 +622,8 @@ int Hermes::init(bool restarting) {
     
     mesh->communicate(Bxyz); // To get yup/ydown fields
 
+    mesh->communicate(coord->g23,coord->g_23, coord->J, coord->dy);
+    
     // Note: A Neumann condition simplifies boundary conditions on fluxes
     // where the condition e.g. on J should be on flux (J/B)
     Bxyz.applyParallelBoundary("parallel_neumann");
@@ -2376,7 +2378,13 @@ int Hermes::rhs(BoutReal t) {
                                       Ti - 0.5 * Te);
   }
   if (anomalous_D > 0.0) {
-    ddt(Ne) += FV::Div_a_Laplace_perp(anomalous_D, DC(Ne));
+    if (fci_transform) {
+      Field3D a_D3D = Field3D(anomalous_D);
+      mesh->communicate(a_D3D, Ne);
+      ddt(Ne) += FV::Div_a_Laplace_perp(a_D3D, Ne);
+    } else {
+      ddt(Ne) += FV::Div_a_Laplace_perp(anomalous_D, DC(Ne));
+    }
   }
 
   // Source
@@ -2529,7 +2537,13 @@ int Hermes::rhs(BoutReal t) {
     if (anomalous_nu > 0.0) {
       TRACE("Vort:anomalous_nu");
       // Perpendicular anomalous momentum diffusion
-      ddt(Vort) += FV::Div_a_Laplace_perp(anomalous_nu, DC(Vort));
+      if (fci_transform) {
+	Field3D tmpa_nu = anomalous_nu;
+	mesh->communicate(tmpa_nu, Vort);
+	ddt(Vort) += FV::Div_a_Laplace_perp(tmpa_nu, Vort);
+      } else {
+	ddt(Vort) += FV::Div_a_Laplace_perp(anomalous_nu, DC(Vort));
+      }
     }
     
     if (ion_neutral_rate > 0.0) {
@@ -2780,11 +2794,24 @@ int Hermes::rhs(BoutReal t) {
     }
 
     if ((anomalous_D > 0.0) && anomalous_D_nvi) {
-      ddt(NVi) += FV::Div_a_Laplace_perp(DC(Vi) * anomalous_D, DC(Ne));
+      if (fci_transform) {
+	Field3D Via_D = Vi * anomalous_D;
+	mesh->communicate(Ne, Via_D);
+	ddt(NVi) += FV::Div_a_Laplace_perp(Via_D, Ne);
+      } else{
+	ddt(NVi) += FV::Div_a_Laplace_perp(DC(Vi) * anomalous_D, DC(Ne));
+      }
+
     }
     
     if (anomalous_nu > 0.0) {
-      ddt(NVi) += FV::Div_a_Laplace_perp(DC(Ne) * anomalous_nu, DC(Vi));
+      if (fci_transform) {
+	Field3D Nea_nu = Ne*anomalous_nu;
+	mesh->communicate(Nea_nu, Vi);
+	ddt(NVi) += FV::Div_a_Laplace_perp(Nea_nu, Vi);
+      } else {
+	ddt(NVi) += FV::Div_a_Laplace_perp(DC(Ne) * anomalous_nu, DC(Vi));
+      }
     }
     
     if (hyperpar > 0.0) {
@@ -3033,10 +3060,22 @@ int Hermes::rhs(BoutReal t) {
   // Anomalous diffusion
 
   if ((anomalous_D > 0.0) && anomalous_D_pepi) {
-    ddt(Pe) += FV::Div_a_Laplace_perp(anomalous_D * DC(Te), DC(Ne));
+    if (fci_transform) {
+      Field3D Tea_D = Te * anomalous_D;
+      mesh->communicate(Tea_D, Ne);
+      ddt(Pe) += FV::Div_a_Laplace_perp(Tea_D, Ne);
+    } else {
+      ddt(Pe) += FV::Div_a_Laplace_perp(DC(Te) * anomalous_D, DC(Ne));
+    }
   }
   if (anomalous_chi > 0.0) {
-    ddt(Pe) += (2. / 3) * FV::Div_a_Laplace_perp(anomalous_chi * DC(Ne), DC(Te));
+    if (fci_transform) {
+      Field3D Nea_chi = Ne*anomalous_chi;
+      mesh->communicate(Nea_chi, Te);
+      ddt(Pe) += (2. / 3) * FV::Div_a_Laplace_perp(Nea_chi, Te);
+    } else {
+      ddt(Pe) += (2. / 3) * FV::Div_a_Laplace_perp(anomalous_chi * DC(Ne), DC(Te));
+    }
   }
 
   //////////////////////
@@ -3238,12 +3277,24 @@ int Hermes::rhs(BoutReal t) {
   // Anomalous diffusion
 
   if ((anomalous_D > 0.0) && anomalous_D_pepi) {
-    ddt(Pi) += FV::Div_a_Laplace_perp(anomalous_D * DC(Ti), DC(Ne));
+    if (fci_transform) {
+      Field3D Tia_D = Ti * anomalous_D;
+      mesh->communicate(Tia_D, Ne);
+      ddt(Pi) += FV::Div_a_Laplace_perp(Tia_D, Ne);
+    } else {
+      ddt(Pi) += FV::Div_a_Laplace_perp(DC(Ti) * anomalous_D, DC(Ne));
+    }
   }
 
   if (anomalous_chi > 0.0) {
+    if (fci_transform) {
+      Field3D Nea_chi = Ne * anomalous_chi;
+      mesh->communicate(Nea_chi, Ti);
+      ddt(Pi) += (2. / 3) * FV::Div_a_Laplace_perp(Nea_chi, Ti);
+    } else { 
     ddt(Pi) +=
         (2. / 3) * FV::Div_a_Laplace_perp(anomalous_chi * DC(Ne), DC(Ti));
+    }
   }
 
   ///////////////////////////////////

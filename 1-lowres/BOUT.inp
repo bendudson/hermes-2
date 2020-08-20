@@ -1,6 +1,6 @@
 
 NOUT = 100
-TIMESTEP = 500
+TIMESTEP = 10
 
 TwistShift = false  # use twist-shift condition?
 ballooning = false  # ballooning transformation?
@@ -118,7 +118,7 @@ transform_from_field_aligned=False
 
 [Hermes]
 loadmetric = false
-newXZsolver = false
+newXZsolver = true
 
 #######################
 # Output variables
@@ -142,6 +142,13 @@ vepsi_dissipation = false  # Parallel dissipation on Ve-Vi
 vort_dissipation = false
 hyperpar = 0.0
 
+vi_num_diff = 1e-4
+ve_num_diff = -1
+ve_num_hyper = 1e-1
+
+x_hyper_viscos = 1e-3
+z_hyper_viscos = 1e-3
+
 # Flux limiters
 kappa_limit_alpha = -1#0.2 # SOLPS style heat flux limiter
 eta_limit_alpha   = -1#0.5 # SOLPS style viscosity limiter
@@ -158,8 +165,8 @@ split_n0 = false  # Solve n=0 separately?
 split_n0_psi = false
 
 # NOTE: all currents switched off for fluid run
-j_diamag       = false  # Diamagnetic current: Vort <-> Pe
-j_par          = false  # Parallel current:    Vort <-> Psi
+j_diamag       = true  # Diamagnetic current: Vort <-> Pe
+j_par          = true  # Parallel current:    Vort <-> Psi
 
 evolve_te = false
 evolve_ti = false

@@ -47,6 +47,9 @@ const Field3D Div_Perp_Lap_FV_Index(const Field3D &a, const Field3D &f, bool xfl
 // 4th-order flux conserving term, in index space
 const Field3D D4DX4_FV_Index(const Field3D &f, bool bndry_flux=false);
 
+// 4th order Z derivative in index space
+const Field3D D4DZ4_Index(const Field3D &f);
+
 // Div ( k * Grad(f) )
 const Field2D Laplace_FV(const Field2D &k, const Field2D &f);
 

@@ -706,6 +706,15 @@ const Field3D D4DX4_FV_Index(const Field3D &f, bool bndry_flux) {
   return result;
 }
 
+const Field3D D4DZ4_Index(const Field3D &f) {
+  Field3D result{emptyFrom(f)};
+
+  BOUT_FOR(i, f.getRegion("RGN_NOBNDRY")) {
+    result[i] = f[i.zpp()] - 4. * f[i.zp()] + 6. * f[i] - 4. * f[i.zm()] + f[i.zmm()];
+  }
+  return result;
+}
+
 /*! *** USED ***
  * X-Y diffusion
  *

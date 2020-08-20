@@ -340,8 +340,16 @@ int Hermes::init(bool restarting) {
   OPTION(optsc, vort_dissipation, false);
 
   vi_num_diff = optsc["vi_num_diff"]
-                    .doc("Numerical diffusion in X-Z plane. < 0 => off.")
-                    .withDefault(1e-4);
+                    .doc("Numerical Vi diffusion in X-Z plane. < 0 => off.")
+                    .withDefault(-1.0);
+
+  ve_num_diff = optsc["ve_num_diff"]
+                    .doc("Numerical Ve diffusion in X-Z plane. < 0 => off.")
+                    .withDefault(-1.0);
+
+  ve_num_hyper = optsc["ve_num_hyper"]
+                     .doc("Numerical Ve hyper-diffusion in X-Z plane. < 0 => off.")
+                     .withDefault(-1.0);
 
   OPTION(optsc, ne_hyper_z, -1.0);
   OPTION(optsc, pe_hyper_z, -1.0);
@@ -2698,33 +2706,40 @@ int Hermes::rhs(BoutReal t) {
     if (hyperpar > 0.0) {
       ddt(VePsi) -= hyperpar * FV::D4DY4_Index(Ve - Vi);
     }
+
+    if (ve_num_diff > 0.0) {
+      // Numerical perpendicular diffusion
+      ddt(VePsi) += Div_Perp_Lap_FV_Index(ve_num_diff, Ve, ne_bndry_flux);
+    }
+    if (ve_num_hyper > 0.0) {
+      ddt(VePsi) -= ve_num_hyper * (D4DX4_FV_Index(Ve, true) + D4DZ4_Index(Ve));
+    }
     
     if (vepsi_dissipation) {
       // Adds dissipation term like in other equations
       // Maximum speed either electron sound speed or Alfven speed
-      Field3D max_speed = Bnorm * coord->Bxy /
-                          sqrt(SI::mu0 * AA * SI::Mp * Nnorm * Nelim) /
-                          Cs0; // Alfven speed (normalised by Cs0)
+      Field3D max_speed = Bnorm * coord->Bxy / sqrt(SI::mu0 * AA * SI::Mp * Nnorm * Nelim)
+                          / Cs0;                      // Alfven speed (normalised by Cs0)
       Field3D elec_sound = sqrt(mi_me) * sound_speed; // Electron sound speed
       for (auto& i : max_speed.getRegion(RGN_ALL)) {
         // Maximum of Alfven or thermal electron speed
-	if (elec_sound[i] > max_speed[i]) {
-	  max_speed[i] = elec_sound[i];
-	}
+        if (elec_sound[i] > max_speed[i]) {
+          max_speed[i] = elec_sound[i];
+        }
 
         // Limit to 100x reference sound speed or light speed
-        BoutReal lim = BOUTMIN(100., 3e8/Cs0);
+        BoutReal lim = BOUTMIN(100., 3e8 / Cs0);
         if (max_speed[i] > lim) {
           max_speed[i] = lim;
         }
       }
-      if(!fci_transform){
-	ddt(VePsi) -= FV::Div_par(Ve - Vi, 0.0, max_speed);
-      }else{
-	Field3D vdiff = Ve-Vi;
-	mesh->communicate(vdiff);
-	ddt(VePsi) += SQ(coord->dy)*D2DY2(vdiff);
-      }	
+      if (!fci_transform) {
+        ddt(VePsi) -= FV::Div_par(Ve - Vi, 0.0, max_speed);
+      } else {
+        Field3D vdiff = Ve - Vi;
+        mesh->communicate(vdiff);
+        ddt(VePsi) += SQ(coord->dy) * D2DY2(vdiff);
+      }
     }
   }
 

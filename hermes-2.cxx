@@ -228,6 +228,52 @@ const Field3D ceil(const Field3D &var, BoutReal f, REGION rgn = RGN_ALL) {
 // Square function for vectors
 Field3D SQ(const Vector3D &v) { return v * v; }
 
+Field3D floor_all(const Field3D &f, BoutReal minval) {
+  Field3D result = floor(f, minval);
+  result.splitParallelSlices();
+  result.yup() = floor(f.yup(), minval);
+  result.ydown() = floor(f.ydown(), minval);
+  return result;
+}
+
+Field3D copy_all(const Field3D &f) {
+  Field3D result = copy(f);
+  result.splitParallelSlices();
+  result.yup() = copy(f.yup());
+  result.ydown() = copy(f.ydown());
+  return result;
+}
+
+Field3D div_all(const Field3D &num, const Field3D &den) {
+  Field3D result = num / den;
+  result.splitParallelSlices();
+  result.yup() = num.yup() / den.yup();
+  result.ydown() = num.ydown() / den.ydown();
+  return result;
+}
+
+Field3D mul_all(const Field3D &a, const Field3D &b) {
+  Field3D result = a * b;
+  result.splitParallelSlices();
+  result.yup() = a.yup() * b.yup();
+  result.ydown() = a.ydown() * b.ydown();
+  return result;
+}
+
+Field3D sub_all(const Field3D &a, const Field3D &b) {
+  Field3D result = a - b;
+  result.splitParallelSlices();
+  result.yup() = a.yup() - b.yup();
+  result.ydown() = a.ydown() - b.ydown();
+  return result;
+}
+
+void zero_all(Field3D &f) {
+  f = 0.0;
+  f.splitParallelSlices();
+  f.yup() = 0.0;
+  f.ydown() = 0.0;
+}
 
 int Hermes::init(bool restarting) {
 
@@ -367,14 +413,7 @@ int Hermes::init(bool restarting) {
   OPTION(optsc, sheath_yup, true);       // Apply sheath at yup?
   OPTION(optsc, sheath_ydown, true);     // Apply sheath at ydown?
   OPTION(optsc, test_boundaries, false); // Test boundary conditions
-
-  // Fix profiles in SOL
-  OPTION(optsc, sol_fix_profiles, false);
-  if (sol_fix_profiles) {
-    sol_ne = FieldFactory::get()->parse("sol_ne", &optsc);
-    sol_te = FieldFactory::get()->parse("sol_te", &optsc);
-  }
-
+  
   OPTION(optsc, radial_buffers, false);
   OPTION(optsc, radial_inner_width, 4);
   OPTION(optsc, radial_outer_width, 4);
@@ -546,7 +585,7 @@ int Hermes::init(bool restarting) {
       SAVE_REPEAT(ddt(Vort));
     }
   } else {
-    Vort = 0.0;
+    zero_all(Vort);
   }
 
   if (electromagnetic || FiniteElMass) {
@@ -559,7 +598,7 @@ int Hermes::init(bool restarting) {
     // If both electrostatic and zero electron mass,
     // then Ohm's law has no time-derivative terms,
     // but is calculated from other evolving quantities
-    VePsi = 0.0;
+    zero_all(VePsi);
   }
 
   if (ion_velocity) {
@@ -569,7 +608,7 @@ int Hermes::init(bool restarting) {
       SAVE_REPEAT(ddt(NVi));
     }
   } else {
-    NVi = 0.0;
+    zero_all(NVi);
   }
 
   if (verbose) {
@@ -955,40 +994,28 @@ int Hermes::rhs(BoutReal t) {
   // Communicate evolving variables
   // Note: Parallel slices are not calculated because parallel derivatives
   // are calculated using field aligned quantities
-  if(!fci_transform){
-    mesh->communicateXZ(EvolvingVars);
-    for (auto* f : EvolvingVars.field3d()) {
-      f->clearParallelSlices(); // Make sure no parallel slices
-    }
-  }else{
-    mesh->communicate(EvolvingVars);
-  }
+  mesh->communicate(EvolvingVars);
 
-  Field3D Nelim = floor(Ne, 1e-5);
-
+  Field3D Nelim = floor_all(Ne, 1e-5);
+  
   if (!evolve_te) {
-    Pe = copy(Nelim);  // Fixed electron temperature
-    mesh->communicate(Pe);
+    Pe = copy_all(Nelim);  // Fixed electron temperature
   }
   
-  Te = Pe / Nelim;
-  Vi = NVi / Nelim;
+  Te = div_all(Pe, Nelim);
+  Vi = div_all(NVi, Nelim);
 
-  Telim = floor(Te, 0.1 / Tnorm);
+  Telim = floor_all(Te, 0.1 / Tnorm);
 
-  Field3D Pelim = Telim * Nelim;
-
-  Field3D logPelim = log(Pelim);
-  logPelim.applyBoundary("neumann");
+  Field3D Pelim = mul_all(Telim, Nelim);
 
   if (!evolve_ti) {
-    Pi = copy(Nelim);  // Fixed ion temperature
-    mesh->communicate(Pi);
+    Pi = copy_all(Nelim);  // Fixed ion temperature
   }
   
-  Ti = Pi / Nelim;
-  Tilim = floor(Ti, 0.1 / Tnorm);
-  Field3D Pilim = Tilim * Nelim;
+  Ti = div_all(Pi, Nelim);
+  Tilim = floor_all(Ti, 0.1 / Tnorm);
+  Field3D Pilim = mul_all(Tilim, Nelim);
 
   // Set radial boundary conditions on Te, Ti, Vi
   //
@@ -1150,9 +1177,6 @@ int Hermes::rhs(BoutReal t) {
     }
     phi.applyBoundary(t);
     mesh->communicate(phi);
-    if(!fci_transform){
-      phi.clearParallelSlices();
-    }
   }
 
   //////////////////////////////////////////////////////////////
@@ -1161,9 +1185,9 @@ int Hermes::rhs(BoutReal t) {
 
   if (!currents) {
     // No magnetic fields or currents
-    psi = 0.0;
-    Jpar = 0.0;
-    Ve = 0.0; // Ve will be set after the sheath boundaries below
+    zero_all(psi);
+    zero_all(Jpar);
+    zero_all(Ve); // Ve will be set after the sheath boundaries below
   } else {
     // Calculate electomagnetic potential psi from VePsi
     // VePsi = Ve - Vi + 0.5 * mi_me * beta_e * psi
@@ -1197,14 +1221,14 @@ int Hermes::rhs(BoutReal t) {
         Ve.applyBoundary(t);
         mesh->communicate(Ve, psi);
 
-        Jpar = Ne * (Vi - Ve);
+        Jpar = mul_all(Ne, sub_all(Vi, Ve));
         Jpar.applyBoundary(t);
 
       } else {
         // Zero electron mass
         // No Ve term in VePsi, only electromagnetic term
 
-        psi = VePsi / (0.5 * mi_me * beta_e);
+        psi = div_all(VePsi, 0.5 * mi_me * beta_e);
 
         // Ve = (NVi - Delp2(psi)) / Nelim;
 	if(fci_transform){
@@ -1218,13 +1242,13 @@ int Hermes::rhs(BoutReal t) {
         mesh->communicate(Jpar);
 
         Jpar.applyBoundary(t);
-        Ve = (NVi - Jpar) / Nelim;
+        Ve = div_all(sub_all(NVi, Jpar), Nelim);
       }
 
       // psi -= psi.DC(); // Remove toroidal average, only keep fluctuations
     } else {
       // Electrostatic
-      psi = 0.0;
+      zero_all(psi);
       if (FiniteElMass) {
         // No psi contribution to VePsi
         Ve = VePsi + Vi;
@@ -1245,7 +1269,7 @@ int Hermes::rhs(BoutReal t) {
       // Communicate auxilliary variables
       mesh->communicate(Ve);
 
-      Jpar = NVi - Ne * Ve;
+      Jpar = sub_all(NVi, mul_all(Ne, Ve));
     }
     // Ve -= Jpar0 / Ne; // Equilibrium current density
   }
@@ -1257,41 +1281,6 @@ int Hermes::rhs(BoutReal t) {
   // so shift to and then from field aligned
 
   TRACE("Sheath boundaries");
-
-  // Manually setting boundary conditions
-  if (!fci_transform){
-    Ne.clearParallelSlices();
-    Pe.clearParallelSlices();
-    Pi.clearParallelSlices();
-    Pelim.clearParallelSlices();
-    Pilim.clearParallelSlices();
-    Te.clearParallelSlices();
-    Ti.clearParallelSlices();
-    Ve.clearParallelSlices();
-    Vi.clearParallelSlices();
-    Vi.clearParallelSlices();
-    NVi.clearParallelSlices();
-    phi.clearParallelSlices();
-    Vort.clearParallelSlices();
-    Jpar.clearParallelSlices();
-    
-    // Shift to field aligned
-    Ne = toFieldAligned(Ne);
-    Te = toFieldAligned(Te);
-    Ti = toFieldAligned(Ti);
-    Telim = toFieldAligned(Telim);
-    Tilim = toFieldAligned(Tilim);
-    Pe = toFieldAligned(Pe);
-    Pi = toFieldAligned(Pi);
-    Pelim = toFieldAligned(Pelim);
-    Pilim = toFieldAligned(Pilim);
-    Ve = toFieldAligned(Ve);
-    Vi = toFieldAligned(Vi);
-    NVi = toFieldAligned(NVi);
-    phi = toFieldAligned(phi);
-    Jpar = toFieldAligned(Jpar);
-    Vort = toFieldAligned(Vort);
-  }
   
   if (sheath_ydown) {
     switch (sheath_model) {
@@ -1332,158 +1321,27 @@ int Hermes::rhs(BoutReal t) {
           }
 
           // Apply boundary condition half-way between cells
-          for (int jy = mesh->ystart - 1; jy >= 0; jy--) {
-            // Neumann conditions
-            Ne(r.ind, jy, jz) = nesheath;
-            phi(r.ind, jy, jz) = phisheath;
-            Vort(r.ind, jy, jz) = Vort(r.ind, mesh->ystart, jz);
+          // Neumann conditions
+          Ne.ydown()(r.ind, mesh->ystart - 1, jz) = nesheath;
+          phi.ydown()(r.ind, mesh->ystart - 1, jz) = phisheath;
+          Vort.ydown()(r.ind, mesh->ystart - 1, jz) = Vort(r.ind, mesh->ystart, jz);
 
-            // Here zero-gradient Te, heat flux applied later
-            Te(r.ind, jy, jz) = Te(r.ind, mesh->ystart, jz);
-            Ti(r.ind, jy, jz) = Ti(r.ind, mesh->ystart, jz);
+          // Here zero-gradient Te, heat flux applied later
+          Te.ydown()(r.ind, mesh->ystart - 1, jz) = Te(r.ind, mesh->ystart, jz);
+          Ti.ydown()(r.ind, mesh->ystart - 1, jz) = Ti(r.ind, mesh->ystart, jz);
 
-            Pe(r.ind, jy, jz) = Pe(r.ind, mesh->ystart, jz);
-            Pelim(r.ind, jy, jz) = Pelim(r.ind, mesh->ystart, jz);
-            Pi(r.ind, jy, jz) = Pi(r.ind, mesh->ystart, jz);
-            Pilim(r.ind, jy, jz) = Pilim(r.ind, mesh->ystart, jz);
+          Pe.ydown()(r.ind, mesh->ystart - 1, jz) = Pe(r.ind, mesh->ystart, jz);
+          Pelim.ydown()(r.ind, mesh->ystart - 1, jz) = Pelim(r.ind, mesh->ystart, jz);
+          Pi.ydown()(r.ind, mesh->ystart - 1, jz) = Pi(r.ind, mesh->ystart, jz);
+          Pilim.ydown()(r.ind, mesh->ystart - 1, jz) = Pilim(r.ind, mesh->ystart, jz);
 
-            // Dirichlet conditions
-            Vi(r.ind, jy, jz) = 2. * visheath - Vi(r.ind, mesh->ystart, jz);
-            Ve(r.ind, jy, jz) = 2. * vesheath - Ve(r.ind, mesh->ystart, jz);
-            Jpar(r.ind, jy, jz) = 2. * jsheath - Jpar(r.ind, mesh->ystart, jz);
-            NVi(r.ind, jy, jz) =
-                2. * nesheath * visheath - NVi(r.ind, mesh->ystart, jz);
-          }
-        }
-      }
-      break;
-    }
-    case 1: {
-      /*
-        Loizu boundary conditions
-
-        Temperature
-
-        Grad_par(Te) = 0
-
-        Density equation
-
-        Grad_par(n) = -(n/Cs) Grad_par(Vi)
-        -> n_p - n_m = - (n_p + n_m)/(2Cs) (Vi_p - Vi_m)
-
-        Pressure
-
-        Grad_par(Pe) = Te Grad_par(n)
-
-        Potential
-        Grad_par(phi) = -Cs Grad_par(Vi)
-        -> phi_p - phi_m = -Cs (Vi_p - Vi_m)
-       */
-
-      throw BoutException("Sorry, no Loizu boundary for hot ions yet");
-
-      for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
-          // Temperature at the sheath entrance
-          BoutReal tesheath = floor(Te(r.ind, mesh->ystart, jz), 0.0);
-
-          // Zero gradient Te
-          Te(r.ind, mesh->ystart - 1, jz) = Te(r.ind, mesh->ystart, jz);
-          BoutReal Cs = sqrt(tesheath); // Sound speed
-
-          // Ion velocity goes to the sound speed
-          // Dirichlet boundary condition
-          Vi(r.ind, mesh->ystart - 1, jz) =
-              -2. * Cs - Vi(r.ind, mesh->ystart, jz);
-
-          BoutReal g = 0.0;
-          if (tesheath > 0.1 / Tnorm) {
-            // Only divide by Cs if the temperature is greater than 0.1eV
-            // to avoid divide-by-zero errors
-            g = (Vi(r.ind, mesh->ystart - 1, jz) -
-                 Vi(r.ind, mesh->ystart, jz)) /
-                (-2. * Cs);
-          }
-
-          // Mixed boundary condition on n
-          Ne(r.ind, mesh->ystart - 1, jz) =
-              Ne(r.ind, mesh->ystart, jz) * (1 - g) / (1 + g);
-
-          // Make sure nesheath doesn't go negative
-          Ne(r.ind, mesh->ystart - 1, jz) = floor(
-              Ne(r.ind, mesh->ystart - 1, jz), -Ne(r.ind, mesh->ystart, jz));
-
-          // Density at the sheath
-          BoutReal nesheath = 0.5 * (Ne(r.ind, mesh->ystart, jz) +
-                                     Ne(r.ind, mesh->ystart - 1, jz));
-
-          // Momentum
-          NVi(r.ind, mesh->ystart - 1, jz) = NVi(r.ind, mesh->ystart, jz);
-          if (NVi(r.ind, mesh->ystart - 1, jz) > 0.0) {
-            // Limit flux to be <= 0
-            NVi(r.ind, mesh->ystart - 1, jz) = -NVi(r.ind, mesh->ystart, jz);
-          }
-
-          // Pressure
-          Pe(r.ind, mesh->ystart - 1, jz) =
-              Pe(r.ind, mesh->ystart, jz) +
-              tesheath * (Ne(r.ind, mesh->ystart - 1, jz) -
-                          Ne(r.ind, mesh->ystart, jz));
-
-          // Potential
-          phi(r.ind, mesh->ystart - 1, jz) =
-              phi(r.ind, mesh->ystart, jz) -
-              Cs * (Vi(r.ind, mesh->ystart - 1, jz) -
-                    Vi(r.ind, mesh->ystart, jz));
-          BoutReal phisheath = 0.5 * (phi(r.ind, mesh->ystart, jz) +
-                                      phi(r.ind, mesh->ystart - 1, jz));
-
-          // Sheath current
-          BoutReal phi_te = floor(phisheath / tesheath, 0.0);
-          BoutReal vesheath =
-              -Cs * (sqrt(mi_me) / (2. * sqrt(PI))) * exp(-phi_te);
-
-          BoutReal jsheath = nesheath * (-Cs - vesheath);
-
-          // Electron velocity
-          Ve(r.ind, mesh->ystart - 1, jz) =
-              2. * vesheath - Ve(r.ind, mesh->ystart, jz);
-
-          // Parallel velocity
-          Jpar(r.ind, mesh->ystart - 1, jz) =
+          // Dirichlet conditions
+          Vi.ydown()(r.ind, mesh->ystart - 1, jz) = 2. * visheath - Vi(r.ind, mesh->ystart, jz);
+          Ve.ydown()(r.ind, mesh->ystart - 1, jz) = 2. * vesheath - Ve(r.ind, mesh->ystart, jz);
+          Jpar.ydown()(r.ind, mesh->ystart - 1, jz) =
               2. * jsheath - Jpar(r.ind, mesh->ystart, jz);
-
-          if (currents && !finite(Jpar(r.ind, mesh->ystart - 1, jz))) {
-            output.write("JPAR: %d, %d: %e, %e, %e, %e\n", r.ind, jz, jsheath,
-                         vesheath, Cs, nesheath);
-            output.write(" -> %e, %e, %e\n", Ne(r.ind, mesh->ystart, jz),
-                         Ne(r.ind, mesh->ystart - 1, jz), g);
-            exit(1);
-          }
-
-          // Constant gradient on other cells
-          for (int jy = mesh->ystart - 2; jy >= 0; jy--) {
-            Vi(r.ind, jy, jz) =
-                2. * Vi(r.ind, jy + 1, jz) - Vi(r.ind, jy + 2, jz);
-            Ve(r.ind, jy, jz) =
-                2. * Ve(r.ind, jy + 1, jz) - Ve(r.ind, jy + 2, jz);
-            NVi(r.ind, jy, jz) =
-                2. * NVi(r.ind, jy + 1, jz) - NVi(r.ind, jy + 2, jz);
-
-            Ne(r.ind, jy, jz) =
-                2. * Ne(r.ind, jy + 1, jz) - Ne(r.ind, jy + 2, jz);
-            Te(r.ind, jy, jz) =
-                2. * Te(r.ind, jy + 1, jz) - Te(r.ind, jy + 2, jz);
-            Pe(r.ind, jy, jz) =
-                2. * Pe(r.ind, jy + 1, jz) - Pe(r.ind, jy + 2, jz);
-
-            phi(r.ind, jy, jz) =
-                2. * phi(r.ind, jy + 1, jz) - phi(r.ind, jy + 2, jz);
-            Vort(r.ind, jy, jz) =
-                2. * Vort(r.ind, jy + 1, jz) - Vort(r.ind, jy + 2, jz);
-            Jpar(r.ind, jy, jz) =
-                2. * Jpar(r.ind, jy + 1, jz) - Jpar(r.ind, jy + 2, jz);
-          }
+          NVi.ydown()(r.ind, mesh->ystart - 1, jz) =
+              2. * nesheath * visheath - NVi(r.ind, mesh->ystart, jz);
         }
       }
       break;
@@ -1493,7 +1351,7 @@ int Hermes::rhs(BoutReal t) {
         for (int jz = 0; jz < mesh->LocalNz; jz++) {
           // Zero-gradient density
           BoutReal nesheath = 0.5 * (3. * Ne(r.ind, mesh->ystart, jz) -
-                                     Ne(r.ind, mesh->ystart + 1, jz));
+                                     Ne.yup()(r.ind, mesh->ystart + 1, jz));
           if (nesheath < 0.0)
             nesheath = 0.0;
 
@@ -1526,28 +1384,27 @@ int Hermes::rhs(BoutReal t) {
           }
 
           // Apply boundary condition half-way between cells
-          for (int jy = mesh->ystart - 1; jy >= 0; jy--) {
-            // Neumann conditions
-            phi(r.ind, jy, jz) = phisheath;
-            Vort(r.ind, jy, jz) = Vort(r.ind, mesh->ystart, jz);
+            
+          // Neumann conditions
+          phi.ydown()(r.ind, mesh->ystart - 1, jz) = phisheath;
+          Vort.ydown()(r.ind, mesh->ystart - 1, jz) = Vort(r.ind, mesh->ystart, jz);
 
-            // Here zero-gradient Te, heat flux applied later
-            Te(r.ind, jy, jz) = Te(r.ind, mesh->ystart, jz);
-            Ti(r.ind, jy, jz) = Ti(r.ind, mesh->ystart, jz);
+          // Here zero-gradient Te, heat flux applied later
+          Te.ydown()(r.ind, mesh->ystart - 1, jz) = Te(r.ind, mesh->ystart, jz);
+          Ti.ydown()(r.ind, mesh->ystart - 1, jz) = Ti(r.ind, mesh->ystart, jz);
 
-            // Dirichlet conditions
-            Ne(r.ind, jy, jz) = 2. * nesheath - Ne(r.ind, mesh->ystart, jz);
-            Pe(r.ind, jy, jz) =
-                2. * nesheath * tesheath - Pe(r.ind, mesh->ystart, jz);
-            Pi(r.ind, jy, jz) =
-                2. * nesheath * tisheath - Pi(r.ind, mesh->ystart, jz);
+          // Dirichlet conditions
+          Ne.ydown()(r.ind, mesh->ystart - 1, jz) = 2. * nesheath - Ne(r.ind, mesh->ystart, jz);
+          Pe.ydown()(r.ind, mesh->ystart - 1, jz) =
+              2. * nesheath * tesheath - Pe(r.ind, mesh->ystart, jz);
+          Pi.ydown()(r.ind, mesh->ystart - 1, jz) =
+              2. * nesheath * tisheath - Pi(r.ind, mesh->ystart, jz);
 
-            Vi(r.ind, jy, jz) = 2. * visheath - Vi(r.ind, mesh->ystart, jz);
-            Ve(r.ind, jy, jz) = 2. * vesheath - Ve(r.ind, mesh->ystart, jz);
-            Jpar(r.ind, jy, jz) = 2. * jsheath - Jpar(r.ind, mesh->ystart, jz);
-            NVi(r.ind, jy, jz) =
-                2. * nesheath * visheath - NVi(r.ind, mesh->ystart, jz);
-          }
+          Vi.ydown()(r.ind, mesh->ystart - 1, jz) = 2. * visheath - Vi(r.ind, mesh->ystart, jz);
+          Ve.ydown()(r.ind, mesh->ystart - 1, jz) = 2. * vesheath - Ve(r.ind, mesh->ystart, jz);
+          Jpar.ydown()(r.ind, mesh->ystart - 1, jz) = 2. * jsheath - Jpar(r.ind, mesh->ystart, jz);
+          NVi.ydown()(r.ind, mesh->ystart - 1, jz) =
+              2. * nesheath * visheath - NVi(r.ind, mesh->ystart, jz);
         }
       }
       break;
@@ -1557,7 +1414,7 @@ int Hermes::rhs(BoutReal t) {
         for (int jz = 0; jz < mesh->LocalNz; jz++) {
           // Free density
           BoutReal nesheath = 0.5 * (3. * Ne(r.ind, mesh->ystart, jz) -
-                                     Ne(r.ind, mesh->ystart + 1, jz));
+                                     Ne.yup()(r.ind, mesh->ystart + 1, jz));
           if (nesheath < 0.0)
             nesheath = 0.0;
 
@@ -1583,25 +1440,24 @@ int Hermes::rhs(BoutReal t) {
           BoutReal vesheath = visheath;
 
           // Apply boundary condition half-way between cells
-          for (int jy = mesh->ystart - 1; jy >= 0; jy--) {
-            Ne(r.ind, jy, jz) = 2. * nesheath - Ne(r.ind, mesh->ystart, jz);
-            phi(r.ind, jy, jz) = 2. * phisheath - phi(r.ind, mesh->ystart, jz);
-            Vort(r.ind, jy, jz) = Vort(r.ind, mesh->ystart, jz);
+          Ne(r.ind, mesh->ystart - 1, jz) = 2. * nesheath - Ne(r.ind, mesh->ystart, jz);
+          phi(r.ind, mesh->ystart - 1, jz) =
+              2. * phisheath - phi(r.ind, mesh->ystart, jz);
+          Vort(r.ind, mesh->ystart - 1, jz) = Vort(r.ind, mesh->ystart, jz);
 
-            // Here zero-gradient Te, heat flux applied later
-            Te(r.ind, jy, jz) = Te(r.ind, mesh->ystart, jz);
-            Ti(r.ind, jy, jz) = Ti(r.ind, mesh->ystart, jz);
+          // Here zero-gradient Te, heat flux applied later
+          Te.ydown()(r.ind, mesh->ystart - 1, jz) = Te(r.ind, mesh->ystart, jz);
+          Ti.ydown()(r.ind, mesh->ystart - 1, jz) = Ti(r.ind, mesh->ystart, jz);
 
-            Pe(r.ind, jy, jz) = Pe(r.ind, mesh->ystart, jz);
-            Pi(r.ind, jy, jz) = Pi(r.ind, mesh->ystart, jz);
+          Pe.ydown()(r.ind, mesh->ystart - 1, jz) = Pe(r.ind, mesh->ystart, jz);
+          Pi.ydown()(r.ind, mesh->ystart - 1, jz) = Pi(r.ind, mesh->ystart, jz);
 
-            // Dirichlet conditions
-            Vi(r.ind, jy, jz) = 2. * visheath - Vi(r.ind, mesh->ystart, jz);
-            Ve(r.ind, jy, jz) = 2. * vesheath - Ve(r.ind, mesh->ystart, jz);
-            Jpar(r.ind, jy, jz) = -Jpar(r.ind, mesh->ystart, jz);
-            NVi(r.ind, jy, jz) =
-                2. * nesheath * visheath - NVi(r.ind, mesh->ystart, jz);
-          }
+          // Dirichlet conditions
+          Vi.ydown()(r.ind, mesh->ystart - 1, jz) = 2. * visheath - Vi(r.ind, mesh->ystart, jz);
+          Ve.ydown()(r.ind, mesh->ystart - 1, jz) = 2. * vesheath - Ve(r.ind, mesh->ystart, jz);
+          Jpar.ydown()(r.ind, mesh->ystart - 1, jz) = -Jpar(r.ind, mesh->ystart, jz);
+          NVi.ydown()(r.ind, mesh->ystart - 1, jz) =
+              2. * nesheath * visheath - NVi(r.ind, mesh->ystart, jz);
         }
       }
       break;
@@ -1611,30 +1467,32 @@ int Hermes::rhs(BoutReal t) {
     // sheath_ydown == false
     for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
       for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        for (int jy = mesh->ystart - 1; jy >= 0; jy--) {
-          // Zero-gradient Te
-          Te(r.ind, jy, jz) = Te(r.ind, mesh->ystart, jz);
-          Telim(r.ind, jy, jz) = Telim(r.ind, mesh->ystart, jz);
+        // Zero-gradient Te
+        Te.ydown()(r.ind, mesh->ystart - 1, jz) = Te(r.ind, mesh->ystart, jz);
+        Telim.ydown()(r.ind, mesh->ystart - 1, jz) = Telim(r.ind, mesh->ystart, jz);
+        
+        Ti.ydown()(r.ind, mesh->ystart - 1, jz) = Ti(r.ind, mesh->ystart, jz);
+        Tilim.ydown()(r.ind, mesh->ystart - 1, jz) = Tilim(r.ind, mesh->ystart, jz);
 
-          Ti(r.ind, jy, jz) = Ti(r.ind, mesh->ystart, jz);
-          Tilim(r.ind, jy, jz) = Tilim(r.ind, mesh->ystart, jz);
+        Pe.ydown()(r.ind, mesh->ystart - 1, jz) =
+            Ne.ydown()(r.ind, mesh->ystart - 1, jz) * Te.ydown()(r.ind, mesh->ystart - 1, jz);
+        Pelim.ydown()(r.ind, mesh->ystart - 1, jz) =
+            Nelim.ydown()(r.ind, mesh->ystart - 1, jz) * Telim.ydown()(r.ind, mesh->ystart - 1, jz);
 
-          Pe(r.ind, jy, jz) = Ne(r.ind, jy, jz) * Te(r.ind, jy, jz);
-          Pelim(r.ind, jy, jz) = Nelim(r.ind, jy, jz) * Telim(r.ind, jy, jz);
+        Pi.ydown()(r.ind, mesh->ystart - 1, jz) =
+            Ne.ydown()(r.ind, mesh->ystart - 1, jz) * Ti.ydown()(r.ind, mesh->ystart - 1, jz);
+        Pilim.ydown()(r.ind, mesh->ystart - 1, jz) =
+            Nelim.ydown()(r.ind, mesh->ystart - 1, jz) * Tilim.ydown()(r.ind, mesh->ystart - 1, jz);
 
-          Pi(r.ind, jy, jz) = Ne(r.ind, jy, jz) * Ti(r.ind, jy, jz);
-          Pilim(r.ind, jy, jz) = Nelim(r.ind, jy, jz) * Tilim(r.ind, jy, jz);
-
-          // No flows
-          Vi(r.ind, jy, jz) = -Vi(r.ind, mesh->ystart, jz);
-          NVi(r.ind, jy, jz) = -NVi(r.ind, mesh->ystart, jz);
-          Ve(r.ind, jy, jz) = -Ve(r.ind, mesh->ystart, jz);
-          Jpar(r.ind, jy, jz) = -Jpar(r.ind, mesh->ystart, jz);
-        }
+        // No flows
+        Vi.ydown()(r.ind, mesh->ystart - 1, jz) = -Vi(r.ind, mesh->ystart, jz);
+        NVi.ydown()(r.ind, mesh->ystart - 1, jz) = -NVi(r.ind, mesh->ystart, jz);
+        Ve.ydown()(r.ind, mesh->ystart - 1, jz) = -Ve(r.ind, mesh->ystart, jz);
+        Jpar.ydown()(r.ind, mesh->ystart - 1, jz) = -Jpar(r.ind, mesh->ystart, jz);
       }
     }
   }
-
+  
   if (sheath_yup) {
     switch (sheath_model) {
     case 0: { // Normal Bohm sheath
@@ -1673,153 +1531,26 @@ int Hermes::rhs(BoutReal t) {
           }
 
           // Apply boundary condition half-way between cells
-          for (int jy = mesh->yend + 1; jy < mesh->LocalNy; jy++) {
-            // Neumann conditions
-            Ne(r.ind, jy, jz) = nesheath;
-            phi(r.ind, jy, jz) = phisheath;
-            Vort(r.ind, jy, jz) = Vort(r.ind, mesh->yend, jz);
+          // Neumann conditions
+          Ne.yup()(r.ind, mesh->yend + 1, jz) = nesheath;
+          phi.yup()(r.ind, mesh->yend + 1, jz) = phisheath;
+          Vort.yup()(r.ind, mesh->yend + 1, jz) = Vort(r.ind, mesh->yend, jz);
 
-            // Here zero-gradient Te, heat flux applied later
-            Te(r.ind, jy, jz) = Te(r.ind, mesh->yend, jz);
-            Ti(r.ind, jy, jz) = Ti(r.ind, mesh->yend, jz);
+          // Here zero-gradient Te, heat flux applied later
+          Te.yup()(r.ind, mesh->yend + 1, jz) = Te(r.ind, mesh->yend, jz);
+          Ti.yup()(r.ind, mesh->yend + 1, jz) = Ti(r.ind, mesh->yend, jz);
 
-            Pe(r.ind, jy, jz) = Pe(r.ind, mesh->yend, jz);
-            Pelim(r.ind, jy, jz) = Pelim(r.ind, mesh->yend, jz);
-            Pi(r.ind, jy, jz) = Pi(r.ind, mesh->yend, jz);
-            Pilim(r.ind, jy, jz) = Pilim(r.ind, mesh->yend, jz);
+          Pe.yup()(r.ind, mesh->yend + 1, jz) = Pe(r.ind, mesh->yend, jz);
+          Pelim.yup()(r.ind, mesh->yend + 1, jz) = Pelim(r.ind, mesh->yend, jz);
+          Pi.yup()(r.ind, mesh->yend + 1, jz) = Pi(r.ind, mesh->yend, jz);
+          Pilim.yup()(r.ind, mesh->yend + 1, jz) = Pilim(r.ind, mesh->yend, jz);
 
-            // Dirichlet conditions
-            Vi(r.ind, jy, jz) = 2. * visheath - Vi(r.ind, mesh->yend, jz);
-            Ve(r.ind, jy, jz) = 2. * vesheath - Ve(r.ind, mesh->yend, jz);
-            Jpar(r.ind, jy, jz) = 2. * jsheath - Jpar(r.ind, mesh->yend, jz);
-            NVi(r.ind, jy, jz) =
-                2. * nesheath * visheath - NVi(r.ind, mesh->yend, jz);
-          }
-        }
-      }
-      break;
-    }
-    case 1: {
-      /*
-        Loizu boundary conditions
-
-        Temperature
-
-        Grad_par(Te) = 0
-
-        Density equation
-
-        Grad_par(n) = -(n/Cs) Grad_par(Vi)
-        -> n_p - n_m = - (n_p + n_m)/(2Cs) (Vi_p - Vi_m)
-
-        Pressure
-
-        Grad_par(Pe) = Te Grad_par(n)
-
-        Potential
-
-        Grad_par(phi) = -Cs Grad_par(Vi)
-        -> phi_p - phi_m = -Cs (Vi_p - Vi_m)
-       */
-
-      for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
-          // Temperature at the sheath entrance
-          BoutReal tesheath = floor(Te(r.ind, mesh->yend, jz), 0.0);
-
-          // Zero gradient Te
-          Te(r.ind, mesh->yend + 1, jz) = Te(r.ind, mesh->yend, jz);
-          BoutReal Cs = sqrt(tesheath); // Sound speed
-
-          // Ion velocity goes to the sound speed
-          // Dirichlet boundary condition
-          Vi(r.ind, mesh->yend + 1, jz) = 2. * Cs - Vi(r.ind, mesh->yend, jz);
-
-          BoutReal g = 0.0;
-          if (tesheath > 0.1 / Tnorm) {
-            // Only divide by Cs if the temperature is greater than 0.1eV
-            // to avoid divide-by-zero errors
-            g = (Vi(r.ind, mesh->yend + 1, jz) - Vi(r.ind, mesh->yend, jz)) /
-                (2. * Cs);
-          }
-	  
-          // Mixed boundary condition on n
-          Ne(r.ind, mesh->yend + 1, jz) =
-              Ne(r.ind, mesh->yend, jz) * (1 - g) / (1 + g);
-
-          // Make sure nesheath doesn't go negative
-          Ne(r.ind, mesh->yend + 1, jz) =
-              floor(Ne(r.ind, mesh->yend + 1, jz), -Ne(r.ind, mesh->yend, jz));
-          // Density at the sheath
-          BoutReal nesheath =
-              0.5 * (Ne(r.ind, mesh->yend, jz) + Ne(r.ind, mesh->yend + 1, jz));
-
-          // Momentum
-          NVi(r.ind, mesh->yend + 1, jz) = NVi(r.ind, mesh->yend, jz);
-          if (NVi(r.ind, mesh->yend + 1, jz) < 0.0) {
-            // Limit flux to be >= 0
-            NVi(r.ind, mesh->yend + 1, jz) = -NVi(r.ind, mesh->yend, jz);
-          }
-
-          // Pressure
-          Pe(r.ind, mesh->yend + 1, jz) =
-              Pe(r.ind, mesh->yend, jz) +
-              tesheath *
-                  (Ne(r.ind, mesh->yend + 1, jz) - Ne(r.ind, mesh->yend, jz));
-
-          // Potential
-          phi(r.ind, mesh->yend + 1, jz) =
-              phi(r.ind, mesh->yend, jz) -
-              Cs * (Vi(r.ind, mesh->yend + 1, jz) - Vi(r.ind, mesh->yend, jz));
-          BoutReal phisheath = 0.5 * (phi(r.ind, mesh->yend, jz) +
-                                      phi(r.ind, mesh->yend + 1, jz));
-
-          // Sheath current
-          BoutReal phi_te = floor(phisheath / tesheath, 0.0);
-          BoutReal vesheath =
-              Cs * (sqrt(mi_me) / (2. * sqrt(PI))) * exp(-phi_te);
-
-          BoutReal jsheath = nesheath * (Cs - vesheath);
-
-          // Electron velocity
-          Ve(r.ind, mesh->yend + 1, jz) =
-              2. * vesheath - Ve(r.ind, mesh->yend, jz);
-
-          // Parallel velocity
-          Jpar(r.ind, mesh->yend + 1, jz) =
-              2. * jsheath - Jpar(r.ind, mesh->yend, jz);
-
-          if (currents && !finite(Jpar(r.ind, mesh->yend + 1, jz))) {
-            output.write("JPAR: %d, %d: %e, %e, %e, %e\n", r.ind, jz, jsheath,
-                         vesheath, Cs, nesheath);
-            output.write(" -> %e, %e, %e\n", Ne(r.ind, mesh->yend, jz),
-                         Ne(r.ind, mesh->yend + 1, jz), g);
-            exit(1);
-          }
-
-          // Constant gradient on other cells
-          for (int jy = mesh->yend + 2; jy < mesh->LocalNy; jy++) {
-            Vi(r.ind, jy, jz) =
-                2. * Vi(r.ind, jy - 1, jz) - Vi(r.ind, jy - 2, jz);
-            Ve(r.ind, jy, jz) =
-                2. * Ve(r.ind, jy - 1, jz) - Ve(r.ind, jy - 2, jz);
-            NVi(r.ind, jy, jz) =
-                2. * NVi(r.ind, jy - 1, jz) - NVi(r.ind, jy - 2, jz);
-
-            Ne(r.ind, jy, jz) =
-                2. * Ne(r.ind, jy - 1, jz) - Ne(r.ind, jy - 2, jz);
-            Te(r.ind, jy, jz) =
-                2. * Te(r.ind, jy - 1, jz) - Te(r.ind, jy - 2, jz);
-            Pe(r.ind, jy, jz) =
-                2. * Pe(r.ind, jy - 1, jz) - Pe(r.ind, jy - 2, jz);
-
-            phi(r.ind, jy, jz) =
-                2. * phi(r.ind, jy - 1, jz) - phi(r.ind, jy - 2, jz);
-            Vort(r.ind, jy, jz) =
-                2. * Vort(r.ind, jy - 1, jz) - Vort(r.ind, jy - 2, jz);
-            Jpar(r.ind, jy, jz) =
-                2. * Jpar(r.ind, jy - 1, jz) - Jpar(r.ind, jy - 2, jz);
-          }
+          // Dirichlet conditions
+          Vi.yup()(r.ind, mesh->yend + 1, jz) = 2. * visheath - Vi(r.ind, mesh->yend, jz);
+          Ve.yup()(r.ind, mesh->yend + 1, jz) = 2. * vesheath - Ve(r.ind, mesh->yend, jz);
+          Jpar.yup()(r.ind, mesh->yend + 1, jz) = 2. * jsheath - Jpar(r.ind, mesh->yend, jz);
+          NVi.yup()(r.ind, mesh->yend + 1, jz) =
+              2. * nesheath * visheath - NVi(r.ind, mesh->yend, jz);
         }
       }
       break;
@@ -1829,7 +1560,7 @@ int Hermes::rhs(BoutReal t) {
         for (int jz = 0; jz < mesh->LocalNz; jz++) {
           // Zero-gradient density
           BoutReal nesheath = 0.5 * (3. * Ne(r.ind, mesh->yend, jz) -
-                                     Ne(r.ind, mesh->yend - 1, jz));
+                                     Ne.ydown()(r.ind, mesh->yend - 1, jz));
           if (nesheath < 0.0)
             nesheath = 0.0;
 
@@ -1861,28 +1592,26 @@ int Hermes::rhs(BoutReal t) {
           }
 
           // Apply boundary condition half-way between cells
-          for (int jy = mesh->yend + 1; jy < mesh->LocalNy; jy++) {
             // Neumann conditions
-            phi(r.ind, jy, jz) = phisheath;
-            Vort(r.ind, jy, jz) = Vort(r.ind, mesh->yend, jz);
+          phi.yup()(r.ind, mesh->yend + 1, jz) = phisheath;
+          Vort.yup()(r.ind, mesh->yend + 1, jz) = Vort(r.ind, mesh->yend, jz);
 
-            // Here zero-gradient Te, heat flux applied later
-            Te(r.ind, jy, jz) = tesheath;
-            Ti(r.ind, jy, jz) = Ti(r.ind, mesh->yend, jz);
+          // Here zero-gradient Te, heat flux applied later
+          Te.yup()(r.ind, mesh->yend + 1, jz) = tesheath;
+          Ti.yup()(r.ind, mesh->yend + 1, jz) = Ti(r.ind, mesh->yend, jz);
 
-            // Dirichlet conditions
-            Ne(r.ind, jy, jz) = 2. * nesheath - Ne(r.ind, mesh->yend, jz);
-            Pe(r.ind, jy, jz) =
-                2. * nesheath * tesheath - Pe(r.ind, mesh->yend, jz);
-            Pi(r.ind, jy, jz) =
-                2. * nesheath * tisheath - Pi(r.ind, mesh->yend, jz);
+          // Dirichlet conditions
+          Ne.yup()(r.ind, mesh->yend + 1, jz) = 2. * nesheath - Ne(r.ind, mesh->yend, jz);
+          Pe.yup()(r.ind, mesh->yend + 1, jz) =
+              2. * nesheath * tesheath - Pe(r.ind, mesh->yend, jz);
+          Pi.yup()(r.ind, mesh->yend + 1, jz) =
+              2. * nesheath * tisheath - Pi(r.ind, mesh->yend, jz);
 
-            Vi(r.ind, jy, jz) = 2. * visheath - Vi(r.ind, mesh->yend, jz);
-            Ve(r.ind, jy, jz) = 2. * vesheath - Ve(r.ind, mesh->yend, jz);
-            Jpar(r.ind, jy, jz) = 2. * jsheath - Jpar(r.ind, mesh->yend, jz);
-            NVi(r.ind, jy, jz) =
-                2. * nesheath * visheath - NVi(r.ind, mesh->yend, jz);
-          }
+          Vi.yup()(r.ind, mesh->yend + 1, jz) = 2. * visheath - Vi(r.ind, mesh->yend, jz);
+          Ve.yup()(r.ind, mesh->yend + 1, jz) = 2. * vesheath - Ve(r.ind, mesh->yend, jz);
+          Jpar.yup()(r.ind, mesh->yend + 1, jz) = 2. * jsheath - Jpar(r.ind, mesh->yend, jz);
+          NVi.yup()(r.ind, mesh->yend + 1, jz) =
+              2. * nesheath * visheath - NVi(r.ind, mesh->yend, jz);
         }
       }
       break;
@@ -1892,7 +1621,7 @@ int Hermes::rhs(BoutReal t) {
         for (int jz = 0; jz < mesh->LocalNz; jz++) {
           // Zero-gradient density
           BoutReal nesheath = 0.5 * (3. * Ne(r.ind, mesh->yend, jz) -
-                                     Ne(r.ind, mesh->yend - 1, jz));
+                                     Ne.ydown()(r.ind, mesh->yend - 1, jz));
           if (nesheath < 0.0) {
             nesheath = 0.0;
           }
@@ -1916,111 +1645,30 @@ int Hermes::rhs(BoutReal t) {
           BoutReal vesheath = visheath;
 
           // Apply boundary condition half-way between cells
-          for (int jy = mesh->yend + 1; jy < mesh->LocalNy; jy++) {
-            Ne(r.ind, jy, jz) = 2. * nesheath - Ne(r.ind, mesh->yend, jz);
-            phi(r.ind, jy, jz) = 2. * phisheath - phi(r.ind, mesh->yend, jz);
-            Vort(r.ind, jy, jz) = Vort(r.ind, mesh->yend, jz);
+          Ne.yup()(r.ind, mesh->yend + 1, jz) = 2. * nesheath - Ne(r.ind, mesh->yend, jz);
+          phi.yup()(r.ind, mesh->yend + 1, jz) = 2. * phisheath - phi(r.ind, mesh->yend, jz);
+          Vort.yup()(r.ind, mesh->yend + 1, jz) = Vort(r.ind, mesh->yend, jz);
 
-            // Here zero-gradient Te, heat flux applied later
-            Te(r.ind, jy, jz) = Te(r.ind, mesh->yend, jz);
-            Ti(r.ind, jy, jz) = Ti(r.ind, mesh->yend, jz);
+          // Here zero-gradient Te, heat flux applied later
+          Te.yup()(r.ind, mesh->yend + 1, jz) = Te(r.ind, mesh->yend, jz);
+          Ti.yup()(r.ind, mesh->yend + 1, jz) = Ti(r.ind, mesh->yend, jz);
 
-            Pe(r.ind, jy, jz) = Pe(r.ind, mesh->yend, jz);
-            Pi(r.ind, jy, jz) = Pi(r.ind, mesh->yend, jz);
+          Pe.yup()(r.ind, mesh->yend + 1, jz) = Pe(r.ind, mesh->yend, jz);
+          Pi.yup()(r.ind, mesh->yend + 1, jz) = Pi(r.ind, mesh->yend, jz);
 
-            // Dirichlet conditions
-            Vi(r.ind, jy, jz) = 2. * visheath - Vi(r.ind, mesh->yend, jz);
-            Ve(r.ind, jy, jz) = 2. * vesheath - Ve(r.ind, mesh->yend, jz);
-            Jpar(r.ind, jy, jz) = -Jpar(r.ind, mesh->yend, jz);
-            NVi(r.ind, jy, jz) =
-                2. * nesheath * visheath - NVi(r.ind, mesh->yend, jz);
-          }
+          // Dirichlet conditions
+          Vi.yup()(r.ind, mesh->yend + 1, jz) = 2. * visheath - Vi(r.ind, mesh->yend, jz);
+          Ve.yup()(r.ind, mesh->yend + 1, jz) = 2. * vesheath - Ve(r.ind, mesh->yend, jz);
+          Jpar.yup()(r.ind, mesh->yend + 1, jz) = -Jpar(r.ind, mesh->yend, jz);
+          NVi.yup()(r.ind, mesh->yend + 1, jz) =
+              2. * nesheath * visheath - NVi(r.ind, mesh->yend, jz);
         }
       }
       break;
     }
     }
   }
-
-  //////////////////////////////////////////////////////////////
-  // Test boundary conditions for UEDGE comparison
-  // This applies boundary conditions to Vi, Te and Ti at the targets
-  // then updates NVi, Pe and Pi boundaries
-  if (test_boundaries) {
-    // Lower Y target
-    int jy = 1;
-    for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        // Apply Vi = -3e4 m/s (into target)
-        BoutReal vi_bndry = -3e4 / Cs0;
-        Vi(r.ind, jy, jz) = 2. * vi_bndry - Vi(r.ind, jy + 1, jz);
-
-        // Apply Te = Ti = 10eV
-        BoutReal te_bndry = 10. / Tnorm;
-        BoutReal ti_bndry = 10. / Tnorm;
-        Te(r.ind, jy, jz) = 2. * te_bndry - Te(r.ind, jy + 1, jz);
-        Ti(r.ind, jy, jz) = 2. * ti_bndry - Ti(r.ind, jy + 1, jz);
-
-        // Get density at the boundary
-        BoutReal ne_bndry = 0.5 * (Ne(r.ind, jy, jz) + Ne(r.ind, jy + 1, jz));
-        if (ne_bndry < 1e-5)
-          ne_bndry = 1e-5;
-
-        NVi(r.ind, jy, jz) = 2 * ne_bndry * vi_bndry - NVi(r.ind, jy + 1, jz);
-        Pe(r.ind, jy, jz) = 2 * ne_bndry * te_bndry - Pe(r.ind, jy + 1, jz);
-        Pi(r.ind, jy, jz) = 2 * ne_bndry * ti_bndry - Pi(r.ind, jy + 1, jz);
-      }
-    }
-    // Upper Y target
-    jy = mesh->yend + 1;
-    for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        // Apply Vi = 3e4 m/s
-        BoutReal vi_bndry = 3e4 / Cs0;
-        Vi(r.ind, jy, jz) = 2. * vi_bndry - Vi(r.ind, jy - 1, jz);
-
-        // Apply Te = Ti = 10eV
-        BoutReal te_bndry = 10. / Tnorm;
-        BoutReal ti_bndry = 10. / Tnorm;
-        Te(r.ind, jy, jz) = 2. * te_bndry - Te(r.ind, jy - 1, jz);
-        Ti(r.ind, jy, jz) = 2. * ti_bndry - Ti(r.ind, jy - 1, jz);
-
-        // Get density at the boundary
-        BoutReal ne_bndry = 0.5 * (Ne(r.ind, jy, jz) + Ne(r.ind, jy - 1, jz));
-        if (ne_bndry < 1e-5)
-          ne_bndry = 1e-5;
-
-        NVi(r.ind, jy, jz) = 2 * ne_bndry * vi_bndry - NVi(r.ind, jy - 1, jz);
-        Pe(r.ind, jy, jz) = 2 * ne_bndry * te_bndry - Pe(r.ind, jy - 1, jz);
-        Pi(r.ind, jy, jz) = 2 * ne_bndry * ti_bndry - Pi(r.ind, jy - 1, jz);
-      }
-    }
-  }
-
-  // Shift from field aligned
-  if (!fci_transform){
-
-    Ne = fromFieldAligned(Ne);
-    
-    Te = fromFieldAligned(Te);
-    Ti = fromFieldAligned(Ti);
-    Telim = fromFieldAligned(Telim);
-    Tilim = fromFieldAligned(Tilim);
-    
-    Pe = fromFieldAligned(Pe);
-    Pi = fromFieldAligned(Pi);
-    Pelim = fromFieldAligned(Pelim);
-    Pilim = fromFieldAligned(Pilim);
-    
-    Ve = fromFieldAligned(Ve);
-    Vi = fromFieldAligned(Vi);
-    NVi = fromFieldAligned(NVi);
-    
-    phi = fromFieldAligned(phi);
-    Jpar = fromFieldAligned(Jpar);
-    Vort = fromFieldAligned(Vort);
-  }
-
+  
   if (!currents) {
     // No currents, so reset Ve to be equal to Vi
     // VePsi also reset, so saved in restart file correctly
@@ -2035,54 +1683,6 @@ int Hermes::rhs(BoutReal t) {
   Tilim = floor(Ti, 0.1 / Tnorm);
   Pilim = Tilim * Nelim;
   
-  //////////////////////////////////////////////////////////////
-  // Fix profiles on lower Y in SOL region by applying
-  // a Dirichlet boundary condition.
-  // This is to remain consistent with no-flow boundary conditions
-  // on velocity fields, and to avoid spurious fluxes of energy
-  // through the boundaries.
-  //
-  // A generator is used (sol_ne, sol_te), and where sol_ne gives a negative
-  // value, no boundary condition is applied. This is to allow
-  // parts of the domain to be Dirichlet, and parts (e.g. PF) to be Neumann
-
-  if (sol_fix_profiles) {
-    TRACE("Fix profiles");
-    for (RangeIterator idwn = mesh->iterateBndryLowerY(); !idwn.isDone();
-         idwn.next()) {
-
-      BoutReal xnorm = mesh->GlobalX(idwn.ind);
-      BoutReal ynorm =
-          0.5 * (mesh->GlobalY(mesh->ystart) + mesh->GlobalY(mesh->ystart - 1));
-
-      BoutReal neval = sol_ne->generate(xnorm, TWOPI * ynorm, 0.0, t);
-      BoutReal teval = sol_te->generate(xnorm, TWOPI * ynorm, 0.0, t);
-
-      if ((neval < 0.0) || (teval < 0.0))
-        continue; // Skip, leave as previous boundary
-
-      for (int jy = mesh->ystart - 1; jy >= 0; jy--) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
-          Ne(idwn.ind, jy, jz) = 2. * neval - Ne(idwn.ind, mesh->ystart, jz);
-          Te(idwn.ind, jy, jz) = 2. * teval - Te(idwn.ind, mesh->ystart, jz);
-
-          Pe(idwn.ind, jy, jz) = Ne(idwn.ind, jy, jz) * Te(idwn.ind, jy, jz);
-
-          Telim(idwn.ind, jy, jz) = floor(Te(idwn.ind, jy, jz), 0.1 / Tnorm);
-
-          // Zero gradient on Vi to allow flows through boundary
-          Vi(idwn.ind, jy, jz) = Vi(idwn.ind, mesh->ystart, jz);
-
-          NVi(idwn.ind, jy, jz) = Vi(idwn.ind, jy, jz) * Ne(idwn.ind, jy, jz);
-
-          // At the boundary, Ve = Vi so no currents
-          Ve(idwn.ind, jy, jz) =
-              2. * Vi(idwn.ind, jy, jz) - Ve(idwn.ind, mesh->ystart, jz);
-        }
-      }
-    }
-  }
-
   //////////////////////////////////////////////////////////////
   // Plasma quantities calculated.
   // At this point we have calculated all boundary conditions,

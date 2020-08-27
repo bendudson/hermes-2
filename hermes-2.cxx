@@ -1227,8 +1227,7 @@ int Hermes::rhs(BoutReal t) {
       } else {
         // Zero electron mass
         // No Ve term in VePsi, only electromagnetic term
-
-        psi = div_all(VePsi, 0.5 * mi_me * beta_e);
+        psi = div_all(VePsi, mul_all(mul_all(0.5, mi_me), beta_e));
 
         // Ve = (NVi - Delp2(psi)) / Nelim;
 	if(fci_transform){

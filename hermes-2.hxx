@@ -158,6 +158,7 @@ private:
   BoutReal neutral_vwall; // Scale velocity at the wall
   bool sheath_yup, sheath_ydown; 
   bool test_boundaries;
+  bool sheath_allow_supersonic; // If plasma is faster than sound speed, go to plasma velocity
 
   Field2D wall_flux; // Particle flux to wall (diagnostic)
   Field2D wall_power; // Power flux to wall (diagnostic)
@@ -179,6 +180,7 @@ private:
   bool vepsi_dissipation; // Dissipation term in VePsi equation
   bool vort_dissipation; // Dissipation term in Vorticity equation
 
+  BoutReal ne_num_diff; 
   BoutReal vi_num_diff; // Numerical perpendicular diffusion
   BoutReal ve_num_diff; // Numerical perpendicular diffusion
   BoutReal ve_num_hyper; // Numerical hyper-diffusion

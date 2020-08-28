@@ -385,6 +385,10 @@ int Hermes::init(bool restarting) {
   OPTION(optsc, vepsi_dissipation, false);
   OPTION(optsc, vort_dissipation, false);
 
+  ne_num_diff = optsc["ne_num_diff"]
+                    .doc("Numerical Ne diffusion in X-Z plane. < 0 => off.")
+                    .withDefault(-1.0);
+
   vi_num_diff = optsc["vi_num_diff"]
                     .doc("Numerical Vi diffusion in X-Z plane. < 0 => off.")
                     .withDefault(-1.0);
@@ -413,7 +417,12 @@ int Hermes::init(bool restarting) {
   OPTION(optsc, sheath_yup, true);       // Apply sheath at yup?
   OPTION(optsc, sheath_ydown, true);     // Apply sheath at ydown?
   OPTION(optsc, test_boundaries, false); // Test boundary conditions
-  
+
+  sheath_allow_supersonic =
+      optsc["sheath_allow_supersonic"]
+          .doc("If plasma is faster than sound speed, go to plasma velocity")
+          .withDefault<bool>(true);
+
   OPTION(optsc, radial_buffers, false);
   OPTION(optsc, radial_inner_width, 4);
   OPTION(optsc, radial_outer_width, 4);
@@ -969,10 +978,30 @@ int Hermes::init(bool restarting) {
     SAVE_REPEAT(NeSource, PeSource, PiSource);
   }
 
-  psi = phi = 0.0;
-
+  zero_all(phi);
+  zero_all(psi);
+  
   // Preconditioner
   setPrecon((preconfunc)&Hermes::precon);
+
+
+  // Magnetic field in boundary
+  auto& Bxy = mesh->getCoordinates()->Bxy;
+  mesh->communicate(Bxy);
+
+  for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
+    for (int jz = 0; jz < mesh->LocalNz; jz++) {
+      Bxy.ydown()(r.ind, mesh->ystart - 1, jz) = Bxy(r.ind, mesh->ystart, jz);
+      Bxy(r.ind, mesh->ystart - 1, jz) = Bxy(r.ind, mesh->ystart, jz);
+    }
+  }
+  for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
+    for (int jz = 0; jz < mesh->LocalNz; jz++) {
+      Bxy.yup()(r.ind, mesh->yend + 1, jz) = Bxy(r.ind, mesh->yend, jz);
+      Bxy(r.ind, mesh->yend + 1, jz) = Bxy(r.ind, mesh->yend, jz);
+    }
+  }
+
   return 0;
 }
 
@@ -1300,7 +1329,7 @@ int Hermes::rhs(BoutReal t) {
           // Ion velocity goes to the sound speed. Note negative since out of the domain
           BoutReal visheath = -sqrt(tesheath + tisheath);
 
-          if (Vi(r.ind, mesh->ystart, jz) < visheath) {
+          if (sheath_allow_supersonic && (Vi(r.ind, mesh->ystart, jz) < visheath)) {
             // If plasma is faster, go to plasma velocity
             visheath = Vi(r.ind, mesh->ystart, jz);
           }
@@ -1366,7 +1395,7 @@ int Hermes::rhs(BoutReal t) {
           BoutReal visheath =
               -sqrt(tesheath + tisheath); // Sound speed outwards
 
-          if (Vi(r.ind, mesh->ystart, jz) < visheath) {
+          if (sheath_allow_supersonic && (Vi(r.ind, mesh->ystart, jz) < visheath)) {
             // If plasma is faster, go to plasma velocity
             visheath = Vi(r.ind, mesh->ystart, jz);
           }
@@ -1431,7 +1460,7 @@ int Hermes::rhs(BoutReal t) {
           BoutReal visheath =
               -sqrt(tesheath + tisheath); // Sound speed outwards
 
-          if (Vi(r.ind, mesh->ystart, jz) < visheath) {
+          if (sheath_allow_supersonic && (Vi(r.ind, mesh->ystart, jz) < visheath)) {
             // If plasma is faster, go to plasma velocity
             visheath = Vi(r.ind, mesh->ystart, jz);
           }
@@ -1511,7 +1540,7 @@ int Hermes::rhs(BoutReal t) {
           // Ion velocity goes to the sound speed
           BoutReal visheath = sqrt(tesheath + tisheath); // Sound speed outwards
 
-          if (Vi(r.ind, mesh->yend, jz) > visheath) {
+          if (sheath_allow_supersonic && (Vi(r.ind, mesh->yend, jz) > visheath)) {
             // If plasma is faster, go to plasma velocity
             visheath = Vi(r.ind, mesh->yend, jz);
           }
@@ -1574,7 +1603,7 @@ int Hermes::rhs(BoutReal t) {
           // Ion velocity goes to the sound speed
           BoutReal visheath = sqrt(tesheath + tisheath); // Sound speed outwards
 
-          if (Vi(r.ind, mesh->yend, jz) > visheath) {
+          if (sheath_allow_supersonic && (Vi(r.ind, mesh->yend, jz) > visheath)) {
             // If plasma is faster, go to plasma velocity
             visheath = Vi(r.ind, mesh->yend, jz);
           }
@@ -1636,7 +1665,7 @@ int Hermes::rhs(BoutReal t) {
           // Ion velocity goes to the sound speed
           BoutReal visheath = sqrt(tesheath + tisheath); // Sound speed outwards
 
-          if (Vi(r.ind, mesh->yend, jz) > visheath) {
+          if (sheath_allow_supersonic && (Vi(r.ind, mesh->yend, jz) > visheath)) {
             // If plasma is faster, go to plasma velocity
             visheath = Vi(r.ind, mesh->yend, jz);
           }
@@ -1666,6 +1695,34 @@ int Hermes::rhs(BoutReal t) {
       }
       break;
     }
+    }
+  } else {
+    // sheath_yup == false
+    for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
+      for (int jz = 0; jz < mesh->LocalNz; jz++) {
+        // Zero-gradient Te
+        Te.yup()(r.ind, mesh->yend + 1, jz) = Te(r.ind, mesh->yend, jz);
+        Telim.yup()(r.ind, mesh->yend + 1, jz) = Telim(r.ind, mesh->yend, jz);
+        
+        Ti.yup()(r.ind, mesh->yend + 1, jz) = Ti(r.ind, mesh->yend, jz);
+        Tilim.yup()(r.ind, mesh->yend + 1, jz) = Tilim(r.ind, mesh->yend, jz);
+
+        Pe.yup()(r.ind, mesh->yend + 1, jz) =
+            Ne.yup()(r.ind, mesh->yend + 1, jz) * Te.yup()(r.ind, mesh->yend + 1, jz);
+        Pelim.yup()(r.ind, mesh->yend + 1, jz) =
+            Nelim.yup()(r.ind, mesh->yend + 1, jz) * Telim.yup()(r.ind, mesh->yend + 1, jz);
+
+        Pi.yup()(r.ind, mesh->yend + 1, jz) =
+            Ne.yup()(r.ind, mesh->yend + 1, jz) * Ti.yup()(r.ind, mesh->yend + 1, jz);
+        Pilim.yup()(r.ind, mesh->yend + 1, jz) =
+            Nelim.yup()(r.ind, mesh->yend + 1, jz) * Tilim.yup()(r.ind, mesh->yend + 1, jz);
+
+        // No flows
+        Vi.yup()(r.ind, mesh->yend + 1, jz) = -Vi(r.ind, mesh->yend, jz);
+        NVi.yup()(r.ind, mesh->yend + 1, jz) = -NVi(r.ind, mesh->yend, jz);
+        Ve.yup()(r.ind, mesh->yend + 1, jz) = -Ve(r.ind, mesh->yend, jz);
+        Jpar.yup()(r.ind, mesh->yend + 1, jz) = -Jpar(r.ind, mesh->yend, jz);
+      }
     }
   }
   
@@ -1992,12 +2049,30 @@ int Hermes::rhs(BoutReal t) {
 	ddt(Ne) -= FV::Div_par(Ne, Ve, sound_speed);
       }
     }else{
-      Field3D neve = Ne*Ve;
-      mesh->communicate(neve);
-      ddt(Ne) -= Div_par(neve);
+      ddt(Ne) -= Div_parP(mul_all(Ne, Ve));
+      
+      // Skew-symmetric form
+      //ddt(Ne) -= 0.5 * (Div_par(mul_all(Ne, Ve)) + Ve * Grad_par(Ne) + Ne * Div_par(Ve));
+      /*
+      auto* coords = mesh->getCoordinates();
+      for(auto &i : Ne.getRegion("RGN_NOBNDRY")) {
+        ddt(Ne)[i] -= (Ne.yup()[i.yp()] * Ve.yup()[i.yp()] / coords->Bxy[i.yp()]
+                    - Ne.ydown()[i.ym()] * Ve.ydown()[i.ym()] / coords->Bxy[i.ym()])
+          * coords->Bxy[i] / (coords->dy[i] * sqrt(coords->g_22[i]));
+      }
+      */
     }	
   }
-
+  /*
+  output.write("{} {} {} : {} {} {} : {} {} {} => {}\n",
+               Ne.ydown()(29, mesh->yend - 1, 16), Ne(29, mesh->yend, 16),
+               Ne.yup()(29, mesh->yend + 1, 16), Ve.ydown()(29, mesh->yend - 1, 16),
+               Ve(29, mesh->yend, 16), Ve.yup()(29, mesh->yend + 1, 16),
+               mesh->getCoordinates()->Bxy(29, mesh->yend - 1, 16),
+               mesh->getCoordinates()->Bxy(29, mesh->yend, 16),
+               mesh->getCoordinates()->Bxy(29, mesh->yend + 1, 16),
+               ddt(Ne)(29, mesh->yend, 16));
+  */
   if (j_diamag) {
     // Diamagnetic drift, formulated as a magnetic drift
     // i.e Grad-B + curvature drift
@@ -2086,6 +2161,11 @@ int Hermes::rhs(BoutReal t) {
     ddt(Ne) -= ne_hyper_z * SQ(SQ(coord->dz)) * D4DZ4(Ne);
   }
 
+  if (ne_num_diff > 0.0) {
+    // Numerical perpendicular diffusion
+    ddt(Ne) += Div_Perp_Lap_FV_Index(ne_num_diff, Ne, ne_bndry_flux);
+  }
+  
   ///////////////////////////////////////////////////////////
   // Vorticity
   // This is the current continuity equation
@@ -2364,15 +2444,14 @@ int Hermes::rhs(BoutReal t) {
       }else{
 	Vector3D nvitilimcb = NVi*Tilim*Curlb_B;
 	mesh->communicate(nvitilimcb);
-	ddt(NVi) -= Div(nvitilimcb);
+	//ddt(NVi) -= Div(nvitilimcb);
       }
     }
     if(!fci_transform){
       ddt(NVi) -= FV::Div_par_fvv(NVi, Vi, sound_speed, false);
     }else{
-      Field3D nvivi=NVi*Vi;
-      mesh->communicate(nvivi);
-      ddt(NVi) -= Div_par(nvivi);
+      // Skew-symmetric form
+      ddt(NVi) -= 0.5 * (Div_par(mul_all(NVi, Vi)) + Vi * Grad_par(NVi) + NVi * Div_par(Vi));
     }
     
     // Ignoring polarisation drift for now
@@ -2380,9 +2459,7 @@ int Hermes::rhs(BoutReal t) {
       if(!fci_transform){
 	ddt(NVi) -= Grad_parP(Pe + Pi);
       }else{
-	Field3D pepi = Pe+Pi;
-	mesh->communicate(pepi);
-	ddt(NVi) -= Grad_parP(pepi);
+	ddt(NVi) -= Grad_parP(Pe) + Grad_parP(Pi);
       }
     }
     
@@ -2411,10 +2488,11 @@ int Hermes::rhs(BoutReal t) {
     if (ion_neutral_rate > 0.0) {
       ddt(NVi) -= ion_neutral_rate * NVi;
     }
-
+    
     if (numdiff > 0.0) {
-      ddt(NVi) += numdiff * Div_par_diffusion_index(Vi);
-      // ddt(NVi) += FV::Div_par_K_Grad_par(SQ(mesh->dy)*mesh->g_22*numdiff, Vi);
+      for(auto &i : NVi.getRegion("RGN_NOBNDRY")) {
+        ddt(NVi)[i] += numdiff*(Vi.ydown()[i.ym()] - 2.*Vi[i] + Vi.yup()[i.yp()]);
+      }
     }
 
     if (density_inflow) {
@@ -3482,8 +3560,17 @@ const Field3D Hermes::Grad_parP(const Field3D &f) {
 }
 
 const Field3D Hermes::Div_parP(const Field3D &f) {
-  return Div_par(f);
-  //+ 0.5*beta_e*coord->Bxy*bracket(psi, f/coord->Bxy, BRACKET_ARAKAWA);
+  auto* coords = mesh->getCoordinates();
+  Field3D result;
+  result.allocate();
+  for(auto &i : f.getRegion("RGN_NOBNDRY")) {
+    auto yp = i.yp();
+    auto ym = i.ym();
+    result[i] = (f.yup()[yp] / coords->Bxy.yup()[yp] - f.ydown()[ym] / coords->Bxy.ydown()[ym])
+                * coords->Bxy[i] / (coords->dy[i] * sqrt(coords->g_22[i]));
+  }
+  return result;
+  //return Div_par(f) + 0.5*beta_e*coord->Bxy*bracket(psi, f/coord->Bxy, BRACKET_ARAKAWA);
 }
 
 // Standard main() function

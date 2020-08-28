@@ -10,7 +10,7 @@ ShiftWithoutTwist=false
 MYG=1
 MXG=2
 
-grid = "rotating-ellipse-36x8x32.fci.nc"
+grid = "rotating-ellipse-36x8x32-ix20.fci.nc"
 
 NXPE=1
 
@@ -20,8 +20,9 @@ dump_format = nc
 init_missing=true # initialize missing variables on restart?
 
 [mesh]
-paralleltransform = fci
 symmetricGlobalX = true
+
+extrapolate_y = false   # Extrapolate metrics into Y boundary cells?
 
 [mesh:paralleltransform]
 type = fci
@@ -140,8 +141,10 @@ resistivity_boundary_width = 0
 
 vepsi_dissipation = false  # Parallel dissipation on Ve-Vi
 vort_dissipation = false
-hyperpar = 0.0
+numdiff = 0.01
+hyperpar = -1
 
+ne_num_diff = 1e-4
 vi_num_diff = 1e-4
 ve_num_diff = -1
 ve_num_hyper = 1e-1
@@ -165,8 +168,8 @@ split_n0 = false  # Solve n=0 separately?
 split_n0_psi = false
 
 # NOTE: all currents switched off for fluid run
-j_diamag       = true  # Diamagnetic current: Vort <-> Pe
-j_par          = true  # Parallel current:    Vort <-> Psi
+j_diamag       = false  # Diamagnetic current: Vort <-> Pe
+j_par          = false  # Parallel current:    Vort <-> Psi
 
 evolve_te = false
 evolve_ti = false
@@ -221,8 +224,9 @@ ramp_timescale = 1e4
 #######################
 # Plasma sheath
 sheath_model = 0  # 0 = Bohm, 1 = Loizu, 2 = Bohm + free density
-sheath_yup = false
-sheath_ydown = false
+sheath_yup = true
+sheath_ydown = true
+sheath_allow_supersonic = false
 sheath_gamma_e = 4   # Electron sheath heat transmission
 sheath_gamma_i = 2.5 # Ion sheath heat transmission
 neutral_gamma = 0.0

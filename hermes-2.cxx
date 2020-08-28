@@ -705,7 +705,7 @@ int Hermes::init(bool restarting) {
     Bxyz.applyBoundary("neumann");
     ASSERT1( min(Bxyz) > 0.0 );
     
-    mesh->communicate(Bxyz); // To get yup/ydown fields
+    mesh->communicate(Bxyz, coord->dz, coord->dy, coord->J, coord->g_23, coord->g23, coord->Bxy); // To get yup/ydown fields
 
     // Note: A Neumann condition simplifies boundary conditions on fluxes
     // where the condition e.g. on J should be on flux (J/B)
@@ -1256,8 +1256,7 @@ int Hermes::rhs(BoutReal t) {
       } else {
         // Zero electron mass
         // No Ve term in VePsi, only electromagnetic term
-
-        psi = div_all(VePsi, 0.5 * mi_me * beta_e);
+        psi = div_all(VePsi, mul_all(mul_all(0.5, mi_me), beta_e));
 
         // Ve = (NVi - Delp2(psi)) / Nelim;
 	if(fci_transform){

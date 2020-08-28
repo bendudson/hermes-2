@@ -2165,6 +2165,11 @@ int Hermes::rhs(BoutReal t) {
     ddt(Ne) += Div_Perp_Lap_FV_Index(ne_num_diff, Ne, ne_bndry_flux);
   }
   
+  if (numdiff > 0.0) {
+    for(auto &i : Ne.getRegion("RGN_NOBNDRY")) {
+      ddt(Ne)[i] += numdiff*(Ne.ydown()[i.ym()] - 2.*Ne[i] + Ne.yup()[i.yp()]);
+    }
+  }
   ///////////////////////////////////////////////////////////
   // Vorticity
   // This is the current continuity equation

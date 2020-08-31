@@ -1229,7 +1229,7 @@ int Hermes::rhs(BoutReal t) {
 
         // aparSolver->setCoefA(-Ne*0.5*mi_me*beta_e);
         Field2D NDC = DC(Ne);
-        aparSolver->setCoefs(Field3D(1.0), -NDC * 0.5 * mi_me * beta_e);
+        aparSolver->setCoefs(Field3D(1.0), -Ne * 0.5 * mi_me * beta_e);
         // aparSolver->setCoefs(1.0, -Ne*0.5*mi_me*beta_e);
         if (split_n0_psi) {
           // Solve n=0 component separately
@@ -1241,7 +1241,7 @@ int Hermes::rhs(BoutReal t) {
 
           psi = aparSolver->solve(-NDC * VePsi - JDC, psi - psi2D) + psi2D;
         } else {
-          psi = aparSolver->solve(Field3D(-NDC * VePsi), Field3D(psi));
+          psi = aparSolver->solve(Field3D(-Ne * VePsi), Field3D(psi));
           // psi = aparSolver->solve(-Ne*VePsi, psi);
         }
 
@@ -1256,7 +1256,7 @@ int Hermes::rhs(BoutReal t) {
       } else {
         // Zero electron mass
         // No Ve term in VePsi, only electromagnetic term
-        psi = div_all(VePsi, mul_all(mul_all(0.5, mi_me), beta_e));
+	psi = VePsi / (0.5 * mi_me * beta_e);
 
         // Ve = (NVi - Delp2(psi)) / Nelim;
 	if(fci_transform){
@@ -2448,7 +2448,7 @@ int Hermes::rhs(BoutReal t) {
       }else{
 	Vector3D nvitilimcb = NVi*Tilim*Curlb_B;
 	mesh->communicate(nvitilimcb);
-	//ddt(NVi) -= Div(nvitilimcb);
+	ddt(NVi) -= Div(nvitilimcb);
       }
     }
     if(!fci_transform){

@@ -260,11 +260,27 @@ Field3D mul_all(const Field3D &a, const Field3D &b) {
   return result;
 }
 
+Vector3D mul_all(const Field3D &a, const Vector3D &b) {
+  Vector3D result = a * b;
+  result.y.splitParallelSlices();
+  result.y.yup() = a.yup() * b.y.yup();
+  result.y.ydown() = a.ydown() * b.y.ydown();
+  return result;
+}
+
 Field3D sub_all(const Field3D &a, const Field3D &b) {
   Field3D result = a - b;
   result.splitParallelSlices();
   result.yup() = a.yup() - b.yup();
   result.ydown() = a.ydown() - b.ydown();
+  return result;
+}
+
+Field3D add_all(const Field3D &a, const Field3D &b) {
+  Field3D result = a + b;
+  result.splitParallelSlices();
+  result.yup() = a.yup() + b.yup();
+  result.ydown() = a.ydown() + b.ydown();
   return result;
 }
 
@@ -701,6 +717,7 @@ int Hermes::init(bool restarting) {
   if(fci_transform){
     poloidal_flows = false;
     mesh->get(Bxyz, "B",1.0);
+    Bxyz /= Bnorm;
     SAVE_ONCE(Bxyz);
     Bxyz.applyBoundary("neumann");
     ASSERT1( min(Bxyz) > 0.0 );
@@ -713,7 +730,7 @@ int Hermes::init(bool restarting) {
     
     logB = log(Bxyz);
 
-    bracket_factor = sqrt(coord->g_22) / (coord->J * Bxyz);
+    bracket_factor = 1.0;//sqrt(coord->g_22) / (coord->J * Bxyz);
     SAVE_ONCE(bracket_factor);
   }else{
     bracket_factor = sqrt(coord->g_22) / (coord->J * coord->Bxy);
@@ -892,7 +909,8 @@ int Hermes::init(bool restarting) {
   Curlb_B.z *= rho_s0 * rho_s0;
 
   Curlb_B *= 2. / coord->Bxy;
-
+  mesh->communicate(Curlb_B);
+      
   SAVE_REPEAT(phi);
 
   if (j_par) {
@@ -1104,7 +1122,7 @@ int Hermes::rhs(BoutReal t) {
 
   // Are there any currents? If not, then there is no source
   // for vorticity, phi = 0 and jpar = 0
-  bool currents = j_par | j_diamag;
+  bool currents = j_par || j_diamag;
 
   // Local sound speed. Used for parallel advection operator
   // Assumes isothermal electrons, adiabatic ions
@@ -2078,9 +2096,10 @@ int Hermes::rhs(BoutReal t) {
     if(!fci_transform){
       ddt(Ne) -= FV::Div_f_v(Ne, -Telim * Curlb_B, ne_bndry_flux);
     }else{
-      Vector3D netelimcb = - Ne * Telim * Curlb_B;
-      mesh->communicate(netelimcb);
-      ddt(Ne) -= Div(netelimcb);
+      Field3D netelim = -Ne*Telim;
+      mesh->communicate(netelim);
+      // Vector3D netelimcb = mul_all(netelim , Curlb_B);
+      ddt(Ne) -= fci_curvature(netelim);//Div(netelimcb);
     }      
   }
 
@@ -2187,7 +2206,7 @@ int Hermes::rhs(BoutReal t) {
       // This term is central differencing so that it balances the parallel gradient
       // of the potential in Ohm's law
       if(fci_transform){mesh->communicate(Jpar);}
-      ddt(Vort) += Div_par(Jpar);
+      ddt(Vort) += Div_parP(Jpar);
     }
 
     if (j_diamag) {
@@ -2198,9 +2217,13 @@ int Hermes::rhs(BoutReal t) {
       if(!fci_transform){
 	ddt(Vort) += Div((Pi + Pe) * Curlb_B);
       }else{
-	Vector3D pipecb = (Pi + Pe) * Curlb_B;
-	mesh->communicate(pipecb);
-	ddt(Vort) += Div(pipecb);// fci_curvature(pipe);
+	Field3D pipe = add_all(Pi, Pe);
+	mesh->communicate(pipe);
+	// Vector3D pipecb = mul_all(pipe , Curlb_B);
+	// ddt(Vort) += Div(pipecb);
+	// Vector3D pipecb = (Pi + Pe) * Curlb_B;
+	// mesh->communicate(pipecb);
+	ddt(Vort) += fci_curvature(pipe);
       }
     }
 
@@ -2446,9 +2469,10 @@ int Hermes::rhs(BoutReal t) {
 	ddt(NVi) -= FV::Div_f_v(NVi, Tilim * Curlb_B,
 				ne_bndry_flux); // Grad-B, curvature drift
       }else{
-	Vector3D nvitilimcb = NVi*Tilim*Curlb_B;
-	mesh->communicate(nvitilimcb);
-	ddt(NVi) -= Div(nvitilimcb);
+	Field3D nvitilim = mul_all(NVi,Tilim);
+	// Vector3D nvitilimcb = NVi*Tilim*Curlb_B;
+	// mesh->communicate(nvitilimcb);
+	ddt(NVi) -= fci_curvature(nvitilim); //Div(nvitilimcb);
       }
     }
     if(!fci_transform){
@@ -2858,9 +2882,9 @@ int Hermes::rhs(BoutReal t) {
     // Parallel flow
     if (parallel_flow_p_term) {
       if (fci_transform) {
-        Field3D pevi = Pe * Vi;
-        mesh->communicate(pevi);
-        ddt(Pe) -= Div_par(pevi);
+        Field3D pivi = Pi * Vi;
+        mesh->communicate(pivi);
+        ddt(Pi) -= Div_par(pivi);
       } else {
         ddt(Pi) -= FV::Div_par(Pi, Vi, sound_speed);
       }
@@ -2871,7 +2895,7 @@ int Hermes::rhs(BoutReal t) {
       if (fci_transform) {
         Vector3D pitilimcb = Pi * Tilim * Curlb_B;
         mesh->communicate(pitilimcb);
-        ddt(Pe) -= (5. / 3) * Div(pitilimcb); // fci_curvature(-petilim);
+        ddt(Pi) -= (5. / 3) * Div(pitilimcb); // fci_curvature(-petilim);
       } else {
         ddt(Pi) -= (5. / 3) * FV::Div_f_v(Pi, Tilim * Curlb_B, pe_bndry_flux);
       }
@@ -3576,6 +3600,7 @@ const Field3D Hermes::Div_parP(const Field3D &f) {
   return result;
   //return Div_par(f) + 0.5*beta_e*coord->Bxy*bracket(psi, f/coord->Bxy, BRACKET_ARAKAWA);
 }
+
 
 // Standard main() function
 BOUTMAIN(Hermes);

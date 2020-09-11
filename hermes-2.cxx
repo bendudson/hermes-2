@@ -252,6 +252,14 @@ Field3D div_all(const Field3D &num, const Field3D &den) {
   return result;
 }
 
+Field3D div_all(const Field3D &num, BoutReal den) {
+  Field3D result = num / den;
+  result.splitParallelSlices();
+  result.yup() = num.yup() / den;
+  result.ydown() = num.ydown() / den;
+  return result;
+}
+
 Field3D mul_all(const Field3D &a, const Field3D &b) {
   Field3D result = a * b;
   result.splitParallelSlices();
@@ -389,6 +397,10 @@ int Hermes::init(bool restarting) {
                     .doc("Numerical Ne diffusion in X-Z plane. < 0 => off.")
                     .withDefault(-1.0);
 
+  ne_num_hyper = optsc["ne_num_hyper"]
+                     .doc("Numerical Ne hyper-diffusion in X-Z plane. < 0 => off.")
+                     .withDefault(-1.0);
+  
   vi_num_diff = optsc["vi_num_diff"]
                     .doc("Numerical Vi diffusion in X-Z plane. < 0 => off.")
                     .withDefault(-1.0);
@@ -840,7 +852,7 @@ int Hermes::init(bool restarting) {
 
     mesh->communicateXZ(Ne, Pe);
   }
-
+  
   /////////////////////////////////////////////////////////
   // Sources (after metric)
 
@@ -1256,7 +1268,7 @@ int Hermes::rhs(BoutReal t) {
       } else {
         // Zero electron mass
         // No Ve term in VePsi, only electromagnetic term
-        psi = div_all(VePsi, mul_all(mul_all(0.5, mi_me), beta_e));
+        psi = div_all(VePsi, 0.5 * mi_me * beta_e);
 
         // Ve = (NVi - Delp2(psi)) / Nelim;
 	if(fci_transform){
@@ -2071,16 +2083,13 @@ int Hermes::rhs(BoutReal t) {
                mesh->getCoordinates()->Bxy(29, mesh->yend, 16),
                mesh->getCoordinates()->Bxy(29, mesh->yend + 1, 16),
                ddt(Ne)(29, mesh->yend, 16));
-  */
-  if (j_diamag) {
+  */  if (j_diamag) {
     // Diamagnetic drift, formulated as a magnetic drift
     // i.e Grad-B + curvature drift
-    if(!fci_transform){
+    if (!fci_transform){
       ddt(Ne) -= FV::Div_f_v(Ne, -Telim * Curlb_B, ne_bndry_flux);
-    }else{
-      Vector3D netelimcb = - Ne * Telim * Curlb_B;
-      mesh->communicate(netelimcb);
-      ddt(Ne) -= Div(netelimcb);
+    } else {
+      ddt(Ne) += fci_curvature(Pelim);
     }      
   }
 
@@ -2164,6 +2173,10 @@ int Hermes::rhs(BoutReal t) {
     // Numerical perpendicular diffusion
     ddt(Ne) += Div_Perp_Lap_FV_Index(ne_num_diff, Ne, ne_bndry_flux);
   }
+
+  if (ne_num_hyper > 0.0) {
+    ddt(Ne) -= ne_num_hyper * (D4DX4_FV_Index(Ne, true) + D4DZ4_Index(Ne));
+  }
   
   if (numdiff > 0.0) {
     for(auto &i : Ne.getRegion("RGN_NOBNDRY")) {
@@ -2198,9 +2211,7 @@ int Hermes::rhs(BoutReal t) {
       if(!fci_transform){
 	ddt(Vort) += Div((Pi + Pe) * Curlb_B);
       }else{
-	Vector3D pipecb = (Pi + Pe) * Curlb_B;
-	mesh->communicate(pipecb);
-	ddt(Vort) += Div(pipecb);// fci_curvature(pipe);
+        ddt(Vort) += fci_curvature(Pi + Pe);
       }
     }
 
@@ -2420,9 +2431,7 @@ int Hermes::rhs(BoutReal t) {
       if (!fci_transform) {
         ddt(VePsi) -= FV::Div_par(Ve - Vi, 0.0, max_speed);
       } else {
-        Field3D vdiff = Ve - Vi;
-        mesh->communicate(vdiff);
-        ddt(VePsi) += SQ(coord->dy) * D2DY2(vdiff);
+        ddt(VePsi) += SQ(coord->dy) * (D2DY2(Ve) - D2DY2(Vi));
       }
     }
   }
@@ -2446,9 +2455,7 @@ int Hermes::rhs(BoutReal t) {
 	ddt(NVi) -= FV::Div_f_v(NVi, Tilim * Curlb_B,
 				ne_bndry_flux); // Grad-B, curvature drift
       }else{
-	Vector3D nvitilimcb = NVi*Tilim*Curlb_B;
-	mesh->communicate(nvitilimcb);
-	//ddt(NVi) -= Div(nvitilimcb);
+        ddt(NVi) -= fci_curvature(NVi * Tilim);
       }
     }
     if(!fci_transform){
@@ -2585,9 +2592,7 @@ int Hermes::rhs(BoutReal t) {
     if (j_diamag) { // Diamagnetic flow
       // Magnetic drift (curvature) divergence.
       if (fci_transform) {
-        Vector3D petelimcb = Pe * -Telim * Curlb_B;
-        mesh->communicate(petelimcb);
-        ddt(Pe) -= (5. / 3) * Div(petelimcb);
+        ddt(Pe) += (5. / 3) * fci_curvature(Pe * Telim);
       } else {
         ddt(Pe) -= (5. / 3) * FV::Div_f_v(Pe, -Telim * Curlb_B, pe_bndry_flux);
       }
@@ -2869,9 +2874,7 @@ int Hermes::rhs(BoutReal t) {
     if (j_diamag) { // Diamagnetic flow
       // Magnetic drift (curvature) divergence
       if (fci_transform) {
-        Vector3D pitilimcb = Pi * Tilim * Curlb_B;
-        mesh->communicate(pitilimcb);
-        ddt(Pe) -= (5. / 3) * Div(pitilimcb); // fci_curvature(-petilim);
+        ddt(Pe) -= (5. / 3) * fci_curvature(Pi * Tilim);
       } else {
         ddt(Pi) -= (5. / 3) * FV::Div_f_v(Pi, Tilim * Curlb_B, pe_bndry_flux);
       }
@@ -3555,7 +3558,6 @@ int Hermes::precon(BoutReal t, BoutReal gamma, BoutReal delta) {
 }
 
 const Field3D Hermes::fci_curvature(const Field3D &f) {
-  // mesh->communicate(f);
   return 2 * bracket(logB, f, BRACKET_ARAKAWA) * bracket_factor;
 }
 

@@ -1,6 +1,6 @@
 
-NOUT = 100
-TIMESTEP = 10
+NOUT = 20
+TIMESTEP = 1
 
 TwistShift = false  # use twist-shift condition?
 ballooning = false  # ballooning transformation?
@@ -145,9 +145,10 @@ numdiff = 0.01
 hyperpar = -1
 
 ne_num_diff = 1e-4
+ne_num_hyper = 1
 vi_num_diff = 1e-4
 ve_num_diff = -1
-ve_num_hyper = 1e-1
+ve_num_hyper = 1
 
 x_hyper_viscos = 1e-3
 z_hyper_viscos = 1e-3
@@ -168,8 +169,8 @@ split_n0 = false  # Solve n=0 separately?
 split_n0_psi = false
 
 # NOTE: all currents switched off for fluid run
-j_diamag       = false  # Diamagnetic current: Vort <-> Pe
-j_par          = false  # Parallel current:    Vort <-> Psi
+j_diamag       = true  # Diamagnetic current: Vort <-> Pe
+j_par          = true  # Parallel current:    Vort <-> Psi
 
 evolve_te = false
 evolve_ti = false
@@ -268,7 +269,7 @@ bndry_xin = neumann_o2
 bndry_xout = neumann_o2
 
 [Ne] # Electron density
-scale = 1
+scale = 0.1
 
 #function = 0.1 + 0.01*sin(8*pi*x - 9*z)*gauss(x, 0.21)#1 + 0.27*gauss(x, 0.42)#*gauss(z-3*pi/2.,0.21/4.)#*gauss(y-pi,0.26)
 function = 0.1 + 0.01*gauss(x,0.21)

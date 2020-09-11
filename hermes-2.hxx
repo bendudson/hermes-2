@@ -180,7 +180,8 @@ private:
   bool vepsi_dissipation; // Dissipation term in VePsi equation
   bool vort_dissipation; // Dissipation term in Vorticity equation
 
-  BoutReal ne_num_diff; 
+  BoutReal ne_num_diff;
+  BoutReal ne_num_hyper;
   BoutReal vi_num_diff; // Numerical perpendicular diffusion
   BoutReal ve_num_diff; // Numerical perpendicular diffusion
   BoutReal ve_num_hyper; // Numerical hyper-diffusion

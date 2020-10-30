@@ -552,8 +552,11 @@ int Hermes::init(bool restarting) {
       if (!mesh->periodicY(x)) {
         // Not periodic, so not in core
         for (int y = mesh->ystart; y <= mesh->yend; y++) {
-          Sn(x, y) = 0.0;
-          Spe(x, y) = 0.0;
+	  for (int z = 0; z <= mesh->LocalNz; z++) {
+	    Sn(x, y, z) = 0.0;
+	    Spe(x, y, z) = 0.0;
+	    Spi(x, y, z) = 0.0;
+	  }
         }
       }
     }
@@ -653,9 +656,9 @@ int Hermes::init(bool restarting) {
     OPTION(optsc, source_p, 1e-2);
     OPTION(optsc, source_i, 1e-6);
 
-    Field2D Snsave = copy(Sn);
-    Field2D Spesave = copy(Spe);
-    Field2D Spisave = copy(Spi);
+    Coordinates::FieldMetric Snsave = copy(Sn);
+    Coordinates::FieldMetric Spesave = copy(Spe);
+    Coordinates::FieldMetric Spisave = copy(Spi);
     SOLVE_FOR(Sn, Spe, Spi);
     Sn = Snsave;
     Spe = Spesave;
@@ -711,7 +714,6 @@ int Hermes::init(bool restarting) {
   }else{
     fci_transform = false;
   }
-
 
   if(fci_transform){
     poloidal_flows = false;
@@ -787,7 +789,7 @@ int Hermes::init(bool restarting) {
   // Read profiles from the mesh
   TRACE("Reading profiles");
 
-  Field2D NeMesh, TeMesh, TiMesh;
+  Field3D NeMesh, TeMesh, TiMesh;
   if (mesh->get(NeMesh, "Ne0")) {
     // No Ne0. Try Ni0
     if (mesh->get(NeMesh, "Ni0")) {
@@ -1244,11 +1246,11 @@ int Hermes::rhs(BoutReal t) {
         // Solve Helmholtz equation for psi
 
         // aparSolver->setCoefA(-Ne*0.5*mi_me*beta_e);
-        Field2D NDC = DC(Ne);
         aparSolver->setCoefs(Field3D(1.0), -Ne * 0.5 * mi_me * beta_e);
         // aparSolver->setCoefs(1.0, -Ne*0.5*mi_me*beta_e);
         if (split_n0_psi) {
           // Solve n=0 component separately
+	  Field2D NDC = DC(Ne);
 
           aparXY->setCoefs(1.0, -NDC * 0.5 * mi_me * beta_e);
 
@@ -2143,8 +2145,9 @@ int Hermes::rhs(BoutReal t) {
 
   if (currents) {
     // ExB drift, only if electric field is evolved
+    // ddt(Ne) = bracket(Ne, phi, BRACKET_ARAKAWA) * bracket_factor;
     ddt(Ne) = -Div_n_bxGrad_f_B_XPPM(Ne, phi, ne_bndry_flux, poloidal_flows,
-                                     true); // ExB drift
+				     true) * bracket_factor; // ExB drift    
   } else {
     ddt(Ne) = 0.0;
   }
@@ -2162,7 +2165,7 @@ int Hermes::rhs(BoutReal t) {
       }
     }else{
       ddt(Ne) -= Div_parP(mul_all(Ne, Ve));
-      
+
       // Skew-symmetric form
       //ddt(Ne) -= 0.5 * (Div_par(mul_all(Ne, Ve)) + Ve * Grad_par(Ne) + Ne * Div_par(Ve));
       /*
@@ -2214,7 +2217,7 @@ int Hermes::rhs(BoutReal t) {
   // Source
   if (adapt_source) {
     // Add source. Ensure that sink will go to zero as Ne -> 0
-    Field2D NeErr = averageY(DC(Ne) - NeTarget);
+    Field3D NeErr = averageY(DC(Ne) - NeTarget);
 
     if (core_sources) {
       // Sources only in core (periodic Y) domain
@@ -2226,13 +2229,15 @@ int Hermes::rhs(BoutReal t) {
           continue; // Not periodic, so skip
 
         for (int y = mesh->ystart; y <= mesh->yend; y++) {
-          Sn(x, y) -= source_p * NeErr(x, y);
-          ddt(Sn)(x, y) = -source_i * NeErr(x, y);
-
-          if (Sn(x, y) < 0.0) {
-            Sn(x, y) = 0.0;
-            if (ddt(Sn)(x, y) < 0.0)
-              ddt(Sn)(x, y) = 0.0;
+	  for (int z = 0; z <= mesh->LocalNz; z++){
+	    Sn(x, y, z) -= source_p * NeErr(x, y, z);
+	    ddt(Sn)(x, y, z) = -source_i * NeErr(x, y, z);
+	    
+	    if (Sn(x, y, z) < 0.0) {
+	      Sn(x, y, z) = 0.0;
+	      if (ddt(Sn)(x, y, z) < 0.0)
+		ddt(Sn)(x, y, z) = 0.0;
+	    }
           }
         }
       }
@@ -2323,17 +2328,19 @@ int Hermes::rhs(BoutReal t) {
       // Using the Boussinesq approximation
       if(!fci_transform){
 	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(0.5 * Vort, phi, vort_bndry_flux,
-					   poloidal_flows);
+					   poloidal_flows, false);
       }else{//fci used
+	// ddt(Vort) += bracket(0.5 * Vort, phi, BRACKET_ARAKAWA) * bracket_factor;
+
 	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(0.5 * Vort, phi, vort_bndry_flux,
-					   false);
+					   poloidal_flows, false) * bracket_factor;
       }
 
       // V_ExB dot Grad(Pi)
-      Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA)*bracket_factor;
+      Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA);// * bracket_factor;
       vEdotGradPi.applyBoundary("free_o2");
       // delp2(phi) term
-      Field3D DelpPhi_2B2 = 0.5 * Delp2(phi) / SQ(coord->Bxy);
+      Field3D DelpPhi_2B2 = 0.5 * Delp2(phi) / SQ(Bxyz);
       DelpPhi_2B2.applyBoundary("free_o2");
 
       mesh->communicate(vEdotGradPi, DelpPhi_2B2);
@@ -2341,9 +2348,9 @@ int Hermes::rhs(BoutReal t) {
       if(!fci_transform){
 	ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
       }else{
-	Field3D inv_2sqrtb = 0.5 / SQ(coord->Bxy);
-	mesh->communicate(inv_2sqrtb,vEdotGradPi);
-	ddt(Vort) -= FV::Div_a_Laplace_perp(inv_2sqrtb, vEdotGradPi);
+	Field3D inv_2sqb = 0.5 / SQ(Bxyz);
+	mesh->communicate(inv_2sqb,vEdotGradPi);
+	ddt(Vort) -= FV::Div_a_Laplace_perp(inv_2sqb, vEdotGradPi);
       }
       
     } else {
@@ -2365,7 +2372,10 @@ int Hermes::rhs(BoutReal t) {
       TRACE("Vort:ion_viscosity");
       // Ion collisional viscosity.
       // Contains poloidal viscosity
-
+      if(fci_transform){
+	throw BoutException("Ion viscosity not implemented for FCI yet\n");
+      }
+      
       ddt(Vort) += Div(0.5 * Pi_ci * Curlb_B) -
                    Div_n_bxGrad_f_B_XPPM(1. / 3, Pi_ci, vort_bndry_flux);
     }
@@ -2544,9 +2554,17 @@ int Hermes::rhs(BoutReal t) {
     TRACE("Ion velocity");
 
     if (currents) {
-      // ExB drift, only if electric field calculated
-      ddt(NVi) = -Div_n_bxGrad_f_B_XPPM(NVi, phi, ne_bndry_flux,
-                                        poloidal_flows); // ExB drift
+      if(fci_transform){
+	// ddt(NVi) = bracket(NVi, phi, BRACKET_ARAKAWA) * bracket_factor;
+	// ExB drift, only if electric field calculated
+	ddt(NVi) = -Div_n_bxGrad_f_B_XPPM(NVi, phi, ne_bndry_flux,
+					  poloidal_flows) * bracket_factor; // ExB drift
+
+      }else{
+	// ExB drift, only if electric field calculated
+	ddt(NVi) = -Div_n_bxGrad_f_B_XPPM(NVi, phi, ne_bndry_flux,
+					  poloidal_flows); // ExB drift
+      }
     } else {
       ddt(NVi) = 0.0;
     }
@@ -2663,8 +2681,14 @@ int Hermes::rhs(BoutReal t) {
   if (evolve_te) {
 
     if (currents) {
-      // Divergence of heat flux due to ExB advection
-      ddt(Pe) = -Div_n_bxGrad_f_B_XPPM(Pe, phi, pe_bndry_flux, poloidal_flows, true);
+      if(fci_transform){
+	// ddt(Pe) = bracket(Pe, phi, BRACKET_ARAKAWA) * bracket_factor;
+	ddt(Pe) = -Div_n_bxGrad_f_B_XPPM(Pe, phi, pe_bndry_flux, poloidal_flows, true) * bracket_factor;
+
+      }else{
+	// Divergence of heat flux due to ExB advection
+	ddt(Pe) = -Div_n_bxGrad_f_B_XPPM(Pe, phi, pe_bndry_flux, poloidal_flows, true);
+      }
     } else {
       ddt(Pe) = 0.0;
     }
@@ -2881,7 +2905,7 @@ int Hermes::rhs(BoutReal t) {
 
     if (adapt_source) {
       // Add source. Ensure that sink will go to zero as Pe -> 0
-      Field2D PeErr = averageY(DC(Pe) - PeTarget);
+      Field3D PeErr = averageY(DC(Pe) - PeTarget);
 
       if (core_sources) {
         // Sources only in core
@@ -2892,13 +2916,15 @@ int Hermes::rhs(BoutReal t) {
             continue; // Not periodic, so skip
 
           for (int y = mesh->ystart; y <= mesh->yend; y++) {
-            Spe(x, y) -= source_p * PeErr(x, y);
-            ddt(Spe)(x, y) = -source_i * PeErr(x, y);
+	    for (int z = 0; z <= mesh->LocalNz; z++) {
+	      Spe(x, y, z) -= source_p * PeErr(x, y, z);
+	      ddt(Spe)(x, y, z) = -source_i * PeErr(x, y, z);
 
-            if (Spe(x, y) < 0.0) {
-              Spe(x, y) = 0.0;
-              if (ddt(Spe)(x, y) < 0.0)
-                ddt(Spe)(x, y) = 0.0;
+	      if (Spe(x, y, z) < 0.0) {
+		Spe(x, y, z) = 0.0;
+		if (ddt(Spe)(x, y, z) < 0.0)
+		  ddt(Spe)(x, y, z) = 0.0;
+	      }
             }
           }
         }
@@ -2956,8 +2982,13 @@ int Hermes::rhs(BoutReal t) {
   if (evolve_ti) {
 
     if (currents) {
-      // ExB advection
-      ddt(Pi) = -Div_n_bxGrad_f_B_XPPM(Pi, phi, pe_bndry_flux, poloidal_flows, true);
+      if(fci_transform){
+	// ddt(Pi) = bracket(Pi, phi, BRACKET_ARAKAWA) * bracket_factor;
+	ddt(Pi) = -Div_n_bxGrad_f_B_XPPM(Pi, phi, pe_bndry_flux, poloidal_flows, true) * bracket_factor;
+      }else{
+	// Divergence of heat flux due to ExB advection
+	ddt(Pi) = -Div_n_bxGrad_f_B_XPPM(Pi, phi, pe_bndry_flux, poloidal_flows, true);
+      }
     } else {
       ddt(Pi) = 0.0;
     }
@@ -3190,7 +3221,7 @@ int Hermes::rhs(BoutReal t) {
 
     if (adapt_source) {
       // Add source. Ensure that sink will go to zero as Pe -> 0
-      Field2D PiErr = averageY(DC(Pi) - PiTarget);
+      Field3D PiErr = averageY(DC(Pi) - PiTarget);
 
       if (core_sources) {
         // Sources only in core
@@ -3201,13 +3232,15 @@ int Hermes::rhs(BoutReal t) {
             continue; // Not periodic, so skip
 
           for (int y = mesh->ystart; y <= mesh->yend; y++) {
-            Spi(x, y) -= source_p * PiErr(x, y);
-            ddt(Spi)(x, y) = -source_i * PiErr(x, y);
+	    for (int z = 0; z <= mesh->LocalNz; z++) {
+	      Spi(x, y, z) -= source_p * PiErr(x, y, z);
+	      ddt(Spi)(x, y, z) = -source_i * PiErr(x, y, z);
 
-            if (Spi(x, y) < 0.0) {
-              Spi(x, y) = 0.0;
-              if (ddt(Spi)(x, y) < 0.0)
-                ddt(Spi)(x, y) = 0.0;
+	      if (Spi(x, y, z) < 0.0) {
+		Spi(x, y, z) = 0.0;
+		if (ddt(Spi)(x, y, z) < 0.0)
+		  ddt(Spi)(x, y, z) = 0.0;
+	      }
             }
           }
         }

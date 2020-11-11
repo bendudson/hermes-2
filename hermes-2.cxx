@@ -3505,7 +3505,7 @@ int Hermes::rhs(BoutReal t) {
             ddt(Pi)(i, j, k) -= D * (Pi(i, j, k) - PiDC(i, j));
             ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeDC(i, j));
             ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortDC(i, j));
-            ddt(NVi)(i, j, k) -= D * (Vort(i, j, k) - NViDC(i, j));
+            ddt(NVi)(i, j, k) -= D * (NVi(i, j, k) - NViDC(i, j));
 
             // Radial fluxes
             

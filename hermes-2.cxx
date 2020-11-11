@@ -1070,6 +1070,7 @@ int Hermes::rhs(BoutReal t) {
         // Uses an exponential decay of the weighting of the value in the boundary
         // so that the solution is well behaved for arbitrary steps
         BoutReal weight = exp(-(t - phi_boundary_last_update) / phi_boundary_timescale);
+        phi_boundary_last_update = t;
 
         if (mesh->firstX()) {
           for (int j = mesh->ystart; j <= mesh->yend; j++) {

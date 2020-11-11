@@ -102,6 +102,7 @@ private:
   
   bool j_diamag;    // Diamagnetic current: Vort <-> Pe
   bool j_par;       // Parallel current:    Vort <-> Psi
+  bool j_pol_terms; // Extra terms in Vort
   bool parallel_flow;
   bool parallel_flow_p_term; // Vi advection terms in Pe, Pi
   bool pe_par;      // Parallel pressure gradient: Pe <-> Psi
@@ -163,7 +164,8 @@ private:
   // Fix density in SOL
   bool sol_fix_profiles;
   std::shared_ptr<FieldGenerator> sol_ne, sol_te; // Generating functions
-  
+
+  Field3D debug_a;
   // Output switches for additional information
   bool verbose;    // Outputs additional fields, mainly for debugging
   bool output_ddt; // Output time derivatives

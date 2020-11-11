@@ -252,7 +252,8 @@ int Hermes::init(bool restarting) {
   j_par = optsc["j_par"]
               .doc("Parallel current:    Vort <-> Psi")
               .withDefault<bool>(true);
-  
+
+  OPTION(optsc, j_pol_terms, true);
   OPTION(optsc, parallel_flow, true);
   OPTION(optsc, parallel_flow_p_term, parallel_flow);
   OPTION(optsc, pe_par, true);
@@ -2426,6 +2427,12 @@ int Hermes::rhs(BoutReal t) {
 
       ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
 
+      if (j_pol_terms){
+	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi, vort_bndry_flux,
+					   poloidal_flows);
+	ddt(Vort) -= FV::Div_f_v(DelpPhi_2B2, Tilim * Curlb_B, vort_bndry_flux);
+      }
+
     } else {
       // When the Boussinesq approximation is not made,
       // then the changing ion density introduces a number
@@ -3517,16 +3524,11 @@ int Hermes::rhs(BoutReal t) {
 
     // Field3D nsink = 0.5*Ne*sqrt(Telim)*sink_invlpar;   // n C_s/ (2L)  //
     // Sound speed flow to targets
-    Field3D nsink = 0.5 * sqrt(Ti) * Ne * sink_invlpar;
-    nsink = floor(nsink, 0.0);
+    Field3D nsink = floor(0.5 * sqrt(Ti + Telim) * Ne * sink_invlpar, 0.0);
 
     ddt(Ne) -= nsink;
-
-    Field3D conduct = (2. / 3) * kappa_epar * Te * SQ(sink_invlpar);
-    conduct = floor(conduct, 0.0);
-    ddt(Pe) -= conduct      // Heat conduction
-               + Te * nsink // Advection
-        ;
+    ddt(Pe) -= (2./3) * kappa_epar * Te * SQ(sink_invlpar) * Te * nsink;
+    ddt(Pi) -= (2./3) * kappa_ipar * Ti * SQ(sink_invlpar) * Ti * nsink;
 
     if (sheath_closure) {
       ///////////////////////////
@@ -3625,8 +3627,9 @@ const Field3D Hermes::Grad_parP(const Field3D &f) {
 }
 
 const Field3D Hermes::Div_parP(const Field3D &f) {
-  return Div_par(f);
-  //+ 0.5*beta_e*coord->Bxy*bracket(psi, f/coord->Bxy, BRACKET_ARAKAWA);
+  // Coordinates *coord = mesh->getCoordinates();
+
+  return Div_par(f); //+ 0.5*beta_e*coord->Bxy*bracket(psi, f/coord->Bxy, BRACKET_ARAKAWA);
 }
 
 // Standard main() function

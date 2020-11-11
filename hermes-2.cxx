@@ -1080,7 +1080,7 @@ int Hermes::rhs(BoutReal t) {
           } else {
             // Use older Laplacian solver
             // phiSolver->setCoefC(1./SQ(coord->Bxy)); // Set when initialised
-            phi = phiSolver->solve(Vort * SQ(coord->Bxy), (sheathmult + log(sqrt(Telim / (Telim + Tilim)))) * Telim );
+            phi = phiSolver->solve(Vort * SQ(coord->Bxy), DC((sheathmult + log(sqrt(Telim / (Telim + Tilim)))) * Telim ));
           }
         }
         

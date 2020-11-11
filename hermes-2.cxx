@@ -2937,6 +2937,9 @@ int Hermes::rhs(BoutReal t) {
       }
       break;
     }
+    default: {
+      throw BoutException("sheath_model %d not implemented", sheath_model);
+    }
     }
     ddt(Pe) += fromFieldAligned(sheath_dpe);
   }
@@ -2984,6 +2987,9 @@ int Hermes::rhs(BoutReal t) {
         }
       }
       break;
+    }
+    default: {
+      throw BoutException("sheath_model %d not implemented", sheath_model);
     }
     }
 
@@ -3256,6 +3262,9 @@ int Hermes::rhs(BoutReal t) {
       }
       break;
     }
+    default: {
+      throw BoutException("sheath_model %d not implemented", sheath_model);
+    }
     }
     ddt(Pi) += fromFieldAligned(sheath_dpi);
   }
@@ -3302,6 +3311,9 @@ int Hermes::rhs(BoutReal t) {
         }
       }
       break;
+    }
+    default: {
+      throw BoutException("sheath_model %d not implemented", sheath_model);
     }
     }
 

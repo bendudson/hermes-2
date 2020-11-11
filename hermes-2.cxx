@@ -2002,7 +2002,7 @@ int Hermes::rhs(BoutReal t) {
 
             // Here zero-gradient Te, heat flux applied later
             // This is so that heat diffusion doesn't remove (or add) additional heat
-            Te(r.ind, jy, jz) = tesheath;
+            Te(r.ind, jy, jz) = Te(r.ind, mesh->yend, jz);
             Ti(r.ind, jy, jz) = Ti(r.ind, mesh->yend, jz);
 
             // Dirichlet conditions to set flows

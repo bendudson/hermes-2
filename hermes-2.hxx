@@ -48,6 +48,8 @@ private:
   // Equilibrium current
   Field2D Jpar0;
 
+  BoutReal nesheath_floor; // Density floor used in sheath boundary conditions
+
   // Evolving variables
   Field3D Ne;         // Electron density
   Field3D Pe, Pi;     // Electron and Ion pressures

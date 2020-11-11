@@ -3627,8 +3627,6 @@ const Field3D Hermes::Grad_parP(const Field3D &f) {
 }
 
 const Field3D Hermes::Div_parP(const Field3D &f) {
-  // Coordinates *coord = mesh->getCoordinates();
-
   return Div_par(f); //+ 0.5*beta_e*coord->Bxy*bracket(psi, f/coord->Bxy, BRACKET_ARAKAWA);
 }
 

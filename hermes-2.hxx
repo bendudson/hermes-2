@@ -165,7 +165,6 @@ private:
   bool sol_fix_profiles;
   std::shared_ptr<FieldGenerator> sol_ne, sol_te; // Generating functions
 
-  Field3D debug_a;
   // Output switches for additional information
   bool verbose;    // Outputs additional fields, mainly for debugging
   bool output_ddt; // Output time derivatives

@@ -144,6 +144,7 @@ private:
   int radial_inner_width; // Number of points in the inner radial buffer
   int radial_outer_width; // Number of points in the outer radial buffer
   BoutReal radial_buffer_D; // Diffusion in buffer region
+  bool radial_inner_averagey; // Average fields in Y in inner radial buffer
 
   BoutReal resistivity_boundary; // Value of nu in boundary layer
   int resistivity_boundary_width; // Width of radial boundary

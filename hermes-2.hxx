@@ -189,7 +189,8 @@ private:
   BoutReal ramp_timescale; // Length of time for the initial ramp
   Field2D NeTarget, PeTarget, PiTarget; // For adaptive sources
   
-  bool adapt_source; // Use a PI controller to feedback profiles
+  bool adapt_source_p; // Use a PI controller to feedback pressure profiles
+  bool adapt_source_n; // Use a PI controller to feedback density profiles
   bool core_sources; // Sources only in the core
   bool energy_source; // Add the same amount of energy to each particle
   BoutReal source_p, source_i;  // Proportional-Integral controller

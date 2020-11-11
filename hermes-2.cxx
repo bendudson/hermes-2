@@ -547,23 +547,37 @@ int Hermes::init(bool restarting) {
     }
   }
 
-  OPTION(optsc, adapt_source, false);
-  if (adapt_source) {
-    // Adaptive sources to match profiles
+  bool adapt_source = optsc["adapt_source"]
+                        .doc("Vary sources in time to match core profiles. This sets the default for adapt_source_p and adapt_source_n").withDefault(false);
+  adapt_source_p = optsc["adapt_source_p"]
+                        .doc("Vary pressure source in time to match core profiles").withDefault(adapt_source);
+  adapt_source_n = optsc["adapt_source_n"]
+                        .doc("Vary density source in time to match core profiles").withDefault(adapt_source);
+  if (adapt_source_p) {
+    // Adaptive pressure sources to match profiles
 
     // PI controller, including an integrated difference term
     OPTION(optsc, source_p, 1e-2);
     OPTION(optsc, source_i, 1e-6);
 
-    Field2D Snsave = copy(Sn);
     Field2D Spesave = copy(Spe);
     Field2D Spisave = copy(Spi);
-    SOLVE_FOR(Sn, Spe, Spi);
-    Sn = Snsave;
+    SOLVE_FOR(Spe, Spi);
     Spe = Spesave;
     Spi = Spisave;
   } else {
-    SAVE_ONCE(Sn, Spe, Spi);
+    SAVE_ONCE(Spe, Spi);
+  }
+  
+  if (adapt_source_n) {
+    // Adaptive density sources to match profile
+    OPTION(optsc, source_p, 1e-2);
+    OPTION(optsc, source_i, 1e-6);
+    Field2D Snsave = copy(Sn);
+    SOLVE_FOR(Sn);
+    Sn = Snsave;
+  } else {
+    SAVE_ONCE(Sn);
   }
 
   /////////////////////////////////////////////////////////
@@ -2327,7 +2341,7 @@ int Hermes::rhs(BoutReal t) {
   }
 
   // Source
-  if (adapt_source) {
+  if (adapt_source_n) {
     // Add source. Ensure that sink will go to zero as Ne -> 0
     Field2D NeErr = averageY(DC(Ne) - NeTarget);
 
@@ -2876,7 +2890,7 @@ int Hermes::rhs(BoutReal t) {
   //////////////////////
   // Sources
 
-  if (adapt_source) {
+  if (adapt_source_p) {
     // Add source. Ensure that sink will go to zero as Pe -> 0
     Field2D PeErr = averageY(DC(Pe) - PeTarget);
 
@@ -3155,7 +3169,7 @@ int Hermes::rhs(BoutReal t) {
   //////////////////////
   // Sources
 
-  if (adapt_source) {
+  if (adapt_source_p) {
     // Add source. Ensure that sink will go to zero as Pe -> 0
     Field2D PiErr = averageY(DC(Pi) - PiTarget);
 

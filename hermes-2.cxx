@@ -859,11 +859,14 @@ int Hermes::init(bool restarting) {
     phi_boundary_relax = optsc["phi_boundary_relax"]
                            .doc("Relax x boundaries of phi towards Neumann?")
                            .withDefault<bool>(false);
+
+    // Add phi to restart files so that the value in the boundaries
+    // is restored on restart. This is done even when phi is not evolving,
+    // so that phi can be saved and re-loaded
+    restart.addOnce(phi, "phi");
+
     if (phi_boundary_relax) {
-      // Add phi to restart files so that the value in the boundaries
-      // is restored on restart
-      restart.addOnce(phi, "phi");
-      
+
       if (!restarting) {
         // Start by setting to the sheath current = 0 boundary value
         phi.setBoundaryTo(DC(

@@ -1080,11 +1080,17 @@ int Hermes::rhs(BoutReal t) {
             }
             phivalue /= mesh->LocalNz; // Average in Z of point next to boundary
 
+            // Old value of phi at boundary
+            BoutReal oldvalue =
+                0.5 * (phi(mesh->xstart - 1, j, 0) + phi(mesh->xstart, j, 0));
+
             // New value of phi in boundary, relaxing towards phivalue
             BoutReal newvalue =
-                weight * phi(mesh->xstart - 1, j, 0) + (1. - weight) * phivalue;
+                weight * oldvalue + (1. - weight) * phivalue;
 
             // Set phi in the boundary to this value
+            // Note: This value in the guard cell will be used to set the value
+            //       at the boundary between cells
             for (int k = 0; k < mesh->LocalNz; k++) {
               phi(mesh->xstart - 1, j, k) = newvalue;
             }
@@ -1099,9 +1105,12 @@ int Hermes::rhs(BoutReal t) {
             }
             phivalue /= mesh->LocalNz; // Average in Z of point next to boundary
 
+            // Old value of phi at boundary
+            BoutReal oldvalue = 0.5 * (phi(mesh->xend + 1, j, 0) + phi(mesh->xend, j, 0));
+
             // New value of phi in boundary, relaxing towards phivalue
             BoutReal newvalue =
-                weight * phi(mesh->xend + 1, j, 0) + (1. - weight) * phivalue;
+                weight * oldvalue + (1. - weight) * phivalue;
 
             // Set phi in the boundary to this value
             for (int k = 0; k < mesh->LocalNz; k++) {

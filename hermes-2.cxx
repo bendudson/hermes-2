@@ -1215,7 +1215,7 @@ int Hermes::rhs(BoutReal t) {
           // Solve non-axisymmetric part using X-Z solver
           if (newXZsolver) {
             newSolver->setCoefs(1. / SQ(coord->Bxy), 0.0);
-            phi = newSolver->solve(Vort - Vort2D, phi);
+            phi = newSolver->solve(Vort - Vort2D, phi + Pi); // Second argument is initial guess
           } else {
             phiSolver->setCoefC(1. / SQ(coord->Bxy));
             phi = phiSolver->solve((Vort - Vort2D) * SQ(coord->Bxy),

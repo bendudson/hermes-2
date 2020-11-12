@@ -1052,8 +1052,10 @@ int Hermes::rhs(BoutReal t) {
   } else {
     // Solve phi from Vorticity
 
-    // Set the boundary. Both 2D and 3D fields are kept, though the 3D field
+    // Set the boundary of phi. Both 2D and 3D fields are kept, though the 3D field
     // is constant in Z. This is for efficiency, to reduce the number of conversions.
+    // Note: For now the boundary values are all at the midpoint,
+    //       and only phi is considered, not phi + Pi which is handled in Boussinesq solves
     Field2D phi_boundary2d;
     Field3D phi_boundary3d;
     
@@ -1084,15 +1086,13 @@ int Hermes::rhs(BoutReal t) {
             BoutReal oldvalue =
                 0.5 * (phi(mesh->xstart - 1, j, 0) + phi(mesh->xstart, j, 0));
 
-            // New value of phi in boundary, relaxing towards phivalue
+            // New value of phi at boundary, relaxing towards phivalue
             BoutReal newvalue =
                 weight * oldvalue + (1. - weight) * phivalue;
 
-            // Set phi in the boundary to this value
-            // Note: This value in the guard cell will be used to set the value
-            //       at the boundary between cells
+            // Set phi at the boundary to this value
             for (int k = 0; k < mesh->LocalNz; k++) {
-              phi(mesh->xstart - 1, j, k) = newvalue;
+              phi(mesh->xstart - 1, j, k) = 2.*newvalue - phi(mesh->xstart, j, k);
             }
           }
         }
@@ -1108,13 +1108,12 @@ int Hermes::rhs(BoutReal t) {
             // Old value of phi at boundary
             BoutReal oldvalue = 0.5 * (phi(mesh->xend + 1, j, 0) + phi(mesh->xend, j, 0));
 
-            // New value of phi in boundary, relaxing towards phivalue
-            BoutReal newvalue =
-                weight * oldvalue + (1. - weight) * phivalue;
+            // New value of phi at boundary, relaxing towards phivalue
+            BoutReal newvalue = weight * oldvalue + (1. - weight) * phivalue;
 
-            // Set phi in the boundary to this value
+            // Set phi at the boundary to this value
             for (int k = 0; k < mesh->LocalNz; k++) {
-              phi(mesh->xend + 1, j, k) = newvalue;
+              phi(mesh->xend + 1, j, k) = 2.*newvalue - phi(mesh->xend, j, k);
             }
           }
         }
@@ -1152,6 +1151,41 @@ int Hermes::rhs(BoutReal t) {
       
       if (boussinesq) {
 
+        // Update boundary conditions. Two issues:
+        // 1) Solving here for phi + Pi, and then subtracting Pi from the result
+        //    The boundary values should therefore include Pi
+        // 2) The INVERT_SET flag takes the value in the guard (boundary) cell
+        //    and sets the boundary between cells to this value.
+        //    This shift by 1/2 grid cell is important.
+
+        if (mesh->firstX()) {
+          for (int j = mesh->ystart; j <= mesh->yend; j++) {
+            for (int k = 0; k < mesh->LocalNz; k++) {
+              // Average phi + Pi at the boundary, and set the boundary cell
+              // to this value. The phi solver will then put the value back
+              // onto the cell mid-point
+              phi_boundary3d(mesh->xstart - 1, j, k) =
+                  0.5
+                  * (phi_boundary3d(mesh->xstart - 1, j, k) +
+                     phi_boundary3d(mesh->xstart, j, k) +
+                     Pi(mesh->xstart - 1, j, k) +
+                     Pi(mesh->xstart, j, k));
+            }
+          }
+        }
+
+        if (mesh->lastX()) {
+          for (int j = mesh->ystart; j <= mesh->yend; j++) {
+            for (int k = 0; k < mesh->LocalNz; k++) {
+              phi_boundary3d(mesh->xend + 1, j, k) =
+                  0.5
+                  * (phi_boundary3d(mesh->xend + 1, j, k) +
+                     phi_boundary3d(mesh->xend, j, k) +
+                     Pi(mesh->xend + 1, j, k) +
+                     Pi(mesh->xend, j, k));
+            }
+          }
+        }
         if (split_n0) {
           ////////////////////////////////////////////
           // Boussinesq, split
@@ -1175,7 +1209,7 @@ int Hermes::rhs(BoutReal t) {
           } else {
             phiSolver->setCoefC(1. / SQ(coord->Bxy));
             phi = phiSolver->solve((Vort - Vort2D) * SQ(coord->Bxy),
-                                   0.0); // Set boundary constant in Z
+                                   phi_boundary3d - phi_boundary2d); // Note: non-zero due to Pi variation
           }
           phi += phi2D; // Add axisymmetric part
         } else {

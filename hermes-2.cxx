@@ -293,6 +293,7 @@ int Hermes::init(bool restarting) {
   auto& optsc = opt["Hermes"];
 
   OPTION(optsc, evolve_plasma, true);
+  OPTION(optsc, show_timesteps, false);
 
   electromagnetic = optsc["electromagnetic"]
                         .doc("Include vector potential psi in Ohm's law?")
@@ -309,7 +310,12 @@ int Hermes::init(bool restarting) {
   j_par = optsc["j_par"]
               .doc("Parallel current:    Vort <-> Psi")
               .withDefault<bool>(true);
-  
+
+  j_pol = optsc["j_pol"]
+              .doc("Polarisation current")
+              .withDefault<bool>(true);
+
+  OPTION(optsc, j_pol_extra_terms, true);
   OPTION(optsc, parallel_flow, true);
   OPTION(optsc, parallel_flow_p_term, parallel_flow);
   OPTION(optsc, pe_par, true);
@@ -443,6 +449,9 @@ int Hermes::init(bool restarting) {
   OPTION(optsc, radial_outer_width, 4);
   OPTION(optsc, radial_buffer_D, 1.0);
 
+  OPTION(optsc, phi_smoothing, false);
+  OPTION(optsc, phi_sf, 0.0);
+  
   resistivity_boundary = optsc["resistivity_boundary"]
     .doc("Normalised resistivity in radial boundary region")
     .withDefault(1.0);
@@ -858,7 +867,7 @@ int Hermes::init(bool restarting) {
 
     mesh->communicateXZ(Ne, Pe);
   }
-  
+
   /////////////////////////////////////////////////////////
   // Sources (after metric)
 
@@ -1024,7 +1033,9 @@ int Hermes::init(bool restarting) {
 }
 
 int Hermes::rhs(BoutReal t) {
-  printf("TIME = %e\r", t);
+  if (show_timesteps) {
+    printf("TIME = %e\r", t);
+  }
 
   Coordinates *coord = mesh->getCoordinates();
   
@@ -1223,6 +1234,12 @@ int Hermes::rhs(BoutReal t) {
       }
     }
     phi.applyBoundary(t);
+    mesh->communicate(phi);
+  }
+  if (phi_smoothing){
+    BOUT_FOR(i, phi.getRegion("RGN_OUTER_X")) {
+      phi[i] = phi_sf * phi[i-1] + (1-phi_sf)*phi[i];
+    }
     mesh->communicate(phi);
   }
 
@@ -2206,9 +2223,14 @@ int Hermes::rhs(BoutReal t) {
     // Classical perpendicular diffusion
     // The only term here comes from the resistive drift
     Dn = (Telim + Tilim) / (tau_e * mi_me * SQ(coord->Bxy));
-    ddt(Ne) += FV::Div_a_Laplace_perp(Dn, Ne);
-    ddt(Ne) += FV::Div_a_Laplace_perp(Ne / (tau_e * mi_me * SQ(coord->Bxy)),
-                                      Ti - 0.5 * Te);
+    if(fci_transform){
+      mesh->communicate(Dn);
+      Field3D Ne_tauB2 = Ne / (tau_e * mi_me * SQ(coord->Bxy));
+      Field3D TiTediff = Ti - 0.5 * Te;
+      mesh->communicate(Ne_tauB2, TiTediff);
+      ddt(Ne) += FV::Div_a_Laplace_perp(Dn, Ne);
+      ddt(Ne) += FV::Div_a_Laplace_perp(Ne_tauB2, TiTediff);
+    }
   }
   if (anomalous_D > 0.0) {
     ddt(Ne) += FV::Div_a_Laplace_perp(anomalous_D, DC(Ne));
@@ -2330,27 +2352,40 @@ int Hermes::rhs(BoutReal t) {
 	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(0.5 * Vort, phi, vort_bndry_flux,
 					   poloidal_flows, false);
       }else{//fci used
-	// ddt(Vort) += bracket(0.5 * Vort, phi, BRACKET_ARAKAWA) * bracket_factor;
-
 	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(0.5 * Vort, phi, vort_bndry_flux,
 					   poloidal_flows, false) * bracket_factor;
       }
 
-      // V_ExB dot Grad(Pi)
-      Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA);// * bracket_factor;
-      vEdotGradPi.applyBoundary("free_o2");
-      // delp2(phi) term
-      Field3D DelpPhi_2B2 = 0.5 * Delp2(phi) / SQ(Bxyz);
-      DelpPhi_2B2.applyBoundary("free_o2");
+      if (j_pol) {
+	// V_ExB dot Grad(Pi)
+	Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA) * bracket_factor;
+	vEdotGradPi.applyBoundary("free_o2");
+	// delp2(phi) term
+	Field3D DelpPhi_2B2 = 0.5 * Delp2(phi) / SQ(Bxyz);
+	DelpPhi_2B2.applyBoundary("free_o2");
 
-      mesh->communicate(vEdotGradPi, DelpPhi_2B2);
+	mesh->communicate(vEdotGradPi, DelpPhi_2B2);
 
-      if(!fci_transform){
-	ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
-      }else{
-	Field3D inv_2sqb = 0.5 / SQ(Bxyz);
-	mesh->communicate(inv_2sqb,vEdotGradPi);
-	ddt(Vort) -= FV::Div_a_Laplace_perp(inv_2sqb, vEdotGradPi);
+	if(!fci_transform){
+	  ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
+	}else{
+	  Field3D inv_2sqb = 0.5 / SQ(Bxyz);
+	  mesh->communicate(inv_2sqb);
+	  ddt(Vort) -= FV::Div_a_Laplace_perp(inv_2sqb, vEdotGradPi);
+	}
+
+	if (j_pol_extra_terms) {
+	  // delp2 phi v_ExB term
+	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi, vort_bndry_flux,
+					     poloidal_flows) * bracket_factor;
+
+	  // delp2 phi v_di term
+	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, Pi, vort_bndry_flux,
+					     poloidal_flows) * bracket_factor;
+	  // Field3D delpphi_2b2Pi = mul_all(DelpPhi_2B2, Pi);
+	  // mesh->communicate(delpphi_2b2Pi);
+	  // ddt(Vort) -= fci_curvature(delpphi_2b2Pi);
+	}
       }
       
     } else {
@@ -2365,6 +2400,7 @@ int Hermes::rhs(BoutReal t) {
       TRACE("Vort:classical_diffusion");
       // Perpendicular viscosity
       Field3D mu = 0.3 * Tilim / (tau_i * SQ(coord->Bxy));
+      if (fci_transform) {mesh->communicate(mu);}
       ddt(Vort) += FV::Div_a_Laplace_perp(mu, Vort);
     }
 
@@ -2636,10 +2672,13 @@ int Hermes::rhs(BoutReal t) {
 
     if (classical_diffusion) {
       // Using same cross-field drift as in density equation
-      ddt(NVi) += FV::Div_a_Laplace_perp(Vi * Dn, Ne);
-
-      ddt(NVi) += FV::Div_a_Laplace_perp(NVi / (tau_e * mi_me * SQ(coord->Bxy)),
-                                         Ti - 0.5 * Te);
+      Field3D ViDn = mul_all(Vi,Dn);
+      mesh->communicate(ViDn);
+      ddt(NVi) += FV::Div_a_Laplace_perp(ViDn, Ne);
+      Field3D NVi_tauB2 = NVi / (tau_e * mi_me * SQ(coord->Bxy));
+      Field3D TiTediff = Ti - 0.5 * Te;
+      mesh->communicate(NVi_tauB2, TiTediff);
+      ddt(NVi) += FV::Div_a_Laplace_perp(NVi_tauB2, TiTediff);
     }
 
     if ((anomalous_D > 0.0) && anomalous_D_nvi) {
@@ -2884,10 +2923,13 @@ int Hermes::rhs(BoutReal t) {
       // Combined resistive drift and cross-field heat diffusion
       // nu_rho2 = nu_ei * rho_e^2 in normalised units
       Field3D nu_rho2 = Telim / (tau_e * mi_me * SQ(coord->Bxy));
-
+      Field3D PePi = Pe + Pi;
+      mesh->communicate(nu_rho2, PePi);
+      Field3D nu_rho2Ne = mul_all(nu_rho2, Ne);
+      mesh->communicate(nu_rho2Ne,Te);
       ddt(Pe) += (2. / 3)
-                 * (FV::Div_a_Laplace_perp(nu_rho2, Pe + Pi)
-                    + (11. / 12) * FV::Div_a_Laplace_perp(nu_rho2 * Ne, Te));
+	* (FV::Div_a_Laplace_perp(nu_rho2, PePi)
+	   + (11. / 12) * FV::Div_a_Laplace_perp(nu_rho2Ne, Te));
     }
 
     //////////////////////
@@ -3070,27 +3112,33 @@ int Hermes::rhs(BoutReal t) {
     if (classical_diffusion) {
       // Cross-field heat conduction
       // kappa_perp = 2 * n * nu_ii * rho_i^2
-
+      Field3D Pi_B2tau = 2. * Pilim / (SQ(coord->Bxy) * tau_i);
+      mesh->communicate(Pi_B2tau);
       ddt(Pi) +=
-          (2. / 3) * FV::Div_a_Laplace_perp(2. * Pilim / (SQ(coord->Bxy) * tau_i), Ti);
+          (2. / 3) * FV::Div_a_Laplace_perp(Pi_B2tau, Ti);
 
       // Resistive drift terms
 
       // nu_rho2 = (Ti/Te) * nu_ei * rho_e^2 in normalised units
       Field3D nu_rho2 = Tilim / (tau_e * mi_me * SQ(coord->Bxy));
-
+      Field3D PePi = Pe + Pi;
+      mesh->communicate(nu_rho2, PePi);
+      Field3D nu_rho2Ne = mul_all(nu_rho2, Ne);
+      mesh->communicate(nu_rho2Ne,Te);
       ddt(Pi) += (5. / 3)
-                 * (FV::Div_a_Laplace_perp(nu_rho2, Pe + Pi)
-                    - (3. / 2) * FV::Div_a_Laplace_perp(nu_rho2 * Ne, Te));
+                 * (FV::Div_a_Laplace_perp(nu_rho2, PePi)
+                    - (3. / 2) * FV::Div_a_Laplace_perp(nu_rho2Ne, Te));
 
       // Collisional heating from perpendicular viscosity
       // in the vorticity equation
 
       if (currents) {
         Vector3D Grad_perp_vort = Grad(Vort);
+	Field3D phiPi = phi+Pi;
+	mesh->communicate(phiPi);
         Grad_perp_vort.y = 0.0; // Zero parallel component
         ddt(Pi) -= (2. / 3) * (3. / 10) * Tilim / (SQ(coord->Bxy) * tau_i)
-                   * (Grad_perp_vort * Grad(phi + Pi));
+                   * (Grad_perp_vort * Grad(phiPi));
       }
     }
 

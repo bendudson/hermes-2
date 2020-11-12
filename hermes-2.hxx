@@ -96,6 +96,7 @@ private:
   
   // Switches
   bool evolve_plasma;   // Should plasma be evolved?
+  bool show_timesteps;  // Show intermediate timesteps?
   bool evolve_te;       // Evolve electron temperature?
   bool evolve_ti;       // Evolve ion temperature?
   
@@ -104,6 +105,8 @@ private:
   
   bool j_diamag;    // Diamagnetic current: Vort <-> Pe
   bool j_par;       // Parallel current:    Vort <-> Psi
+  bool j_pol;       // Polarisation current
+  bool j_pol_extra_terms; // Polarization current, extra terms (Vort)
   bool parallel_flow;
   bool parallel_flow_p_term; // Vi advection terms in Pe, Pi
   bool pe_par;      // Parallel pressure gradient: Pe <-> Psi
@@ -145,6 +148,9 @@ private:
   int radial_outer_width; // Number of points in the outer radial buffer
   BoutReal radial_buffer_D; // Diffusion in buffer region
 
+  bool phi_smoothing;
+  BoutReal phi_sf;
+  
   BoutReal resistivity_boundary; // Value of nu in boundary layer
   int resistivity_boundary_width; // Width of radial boundary
   

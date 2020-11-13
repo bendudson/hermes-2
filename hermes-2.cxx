@@ -265,7 +265,8 @@ int Hermes::init(bool restarting) {
                     .withDefault<bool>(true);
   
   OPTION(optsc, electron_viscosity, true);
-  OPTION(optsc, ion_viscosity, true);
+  ion_viscosity = optsc["ion_viscosity"].doc("Include ion viscosity?").withDefault<bool>(true);
+  ion_viscosity_par = optsc["ion_viscosity_par"].doc("Include parallel diffusion of ion momentum?").withDefault<bool>(ion_viscosity);
 
   electron_neutral = optsc["electron_neutral"]
                        .doc("Include electron-neutral collisions in resistivity?")
@@ -2770,14 +2771,19 @@ int Hermes::rhs(BoutReal t) {
     if (pe_par) {
       ddt(NVi) -= Grad_parP(Pe + Pi);
     }
-    
-    if (ion_viscosity) {
-      TRACE("NVi:ion viscosity");
-      // Poloidal flow damping
+ 
+    if (ion_viscosity_par) {
+      TRACE("NVi:ion viscosity parallel");
+      // Poloidal flow damping parallel part
 
       // The parallel part is solved as a diffusion term
       ddt(NVi) += 1.28 * sqrtB *
                   FV::Div_par_K_Grad_par(Pi * tau_i / (coord->Bxy), sqrtB * Vi);
+    }
+
+    if (ion_viscosity) {
+      TRACE("NVi:ion viscosity");
+      // Poloidal flow damping
 
       if (currents) {
         // Perpendicular part. B32 = B^{3/2}

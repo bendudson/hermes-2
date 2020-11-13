@@ -2054,10 +2054,12 @@ int Hermes::rhs(BoutReal t) {
                                                  // parallel component which is
                                                  // cancelled in first term
 
+    Field3D phi161Ti = phi + 1.61 * Ti;
+    mesh->communicate(phi161Ti,Pi);
     // Perpendicular part from curvature
     Pi_ciperp =
         -0.5 * 0.96 * Pi * tau_i *
-            (Curlb_B * Grad(phi + 1.61 * Ti) -
+            (Curlb_B * Grad(phi161Ti) -
              Curlb_B * Grad(Pi) / Nelim); // q perpendicular
         // q parallel
 
@@ -2072,15 +2074,20 @@ int Hermes::rhs(BoutReal t) {
         0.96 * tau_i * (1.42 / B32) *
 	FV::Div_par_K_Grad_par(B32 * kappa_ipar, Tifree);
     }
-    
+
+    Field3D logTilim = log(Tilim);
+    Field3D logPilim = log(Pilim);
+    mesh->communicate(logTilim, logPilim);
     Pi_ciperp -=
         0.49 * (qipar / Pilim) *
-            (2.27 * Grad_par(log(Tilim)) - Grad_par(log(Pilim))) +
+            (2.27 * Grad_par(logTilim) - Grad_par(logPilim)) +
         0.75 * (0.2 * SQ(qipar) - 0.085 * qisq) / (Pilim * Tilim);
-    
+
+    Field3D logB = log(coord->Bxy);
+    mesh->communicate(Vi, logB);
     // Parallel part
     Pi_cipar = -0.96 * Pi * tau_i *
-               (2. * Grad_par(Vi) + Vi * Grad_par(log(coord->Bxy)));
+               (2. * Grad_par(Vi) + Vi * Grad_par(logB));
 
     // Could also be written as:
     // Pi_cipar = -
@@ -2377,11 +2384,11 @@ int Hermes::rhs(BoutReal t) {
 	if (j_pol_extra_terms) {
 	  // delp2 phi v_ExB term
 	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi, vort_bndry_flux,
-					     poloidal_flows) * bracket_factor;
+	  				     poloidal_flows) * bracket_factor;
 
 	  // delp2 phi v_di term
 	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, Pi, vort_bndry_flux,
-					     poloidal_flows) * bracket_factor;
+	  				     poloidal_flows) * bracket_factor;
 	  // Field3D delpphi_2b2Pi = mul_all(DelpPhi_2B2, Pi);
 	  // mesh->communicate(delpphi_2b2Pi);
 	  // ddt(Vort) -= fci_curvature(delpphi_2b2Pi);
@@ -2408,11 +2415,12 @@ int Hermes::rhs(BoutReal t) {
       TRACE("Vort:ion_viscosity");
       // Ion collisional viscosity.
       // Contains poloidal viscosity
-      if(fci_transform){
-	throw BoutException("Ion viscosity not implemented for FCI yet\n");
-      }
-      
-      ddt(Vort) += Div(0.5 * Pi_ci * Curlb_B) -
+      // if(fci_transform){
+      // 	throw BoutException("Ion viscosity not implemented for FCI yet\n");
+      // }
+      Vector3D Pi_ciCb_B_2 = 0.5 * Pi_ci * Curlb_B;
+      mesh->communicate(Pi_ciCb_B_2);
+      ddt(Vort) += Div(Pi_ciCb_B_2) -
                    Div_n_bxGrad_f_B_XPPM(1. / 3, Pi_ci, vort_bndry_flux);
     }
 
@@ -2636,9 +2644,10 @@ int Hermes::rhs(BoutReal t) {
       if(fci_transform){
 	// The parallel part is solved as a diffusion term
 	Coordinates::FieldMetric sqrtBVi = sqrtB * Vi;
-	mesh->communicate(sqrtBVi);
+	Coordinates::FieldMetric Pitau_i_B = Pi * tau_i / (coord->Bxy);
+	mesh->communicate(sqrtBVi,Pitau_i_B);
 	ddt(NVi) += 1.28 * sqrtB *
-	  Div_par_K_Grad_par(Pi * tau_i / (coord->Bxy), sqrtBVi);
+	  Div_par_K_Grad_par(Pitau_i_B, sqrtBVi);
       }else{
 	ddt(NVi) += 1.28 * sqrtB *
 	  FV::Div_par_K_Grad_par(Pi * tau_i / (coord->Bxy), sqrtB * Vi);
@@ -2647,7 +2656,9 @@ int Hermes::rhs(BoutReal t) {
       if (currents) {
         // Perpendicular part. B32 = B^{3/2}
         // This is only included if ExB flow is included
-        ddt(NVi) -= (2. / 3) * B32 * Grad_par(Pi_ciperp / B32);
+	Field3D Piciperp_B32 = Pi_ciperp/B32;
+	mesh->communicate(Piciperp_B32);
+        ddt(NVi) -= (2. / 3) * B32 * Grad_par(Piciperp_B32);
       }
     }
 
@@ -3144,14 +3155,17 @@ int Hermes::rhs(BoutReal t) {
 
     if (ion_viscosity) {
       // Collisional heating due to parallel viscosity
+      Field3D sqrtBVi = sqrtB * Vi;
+      mesh->communicate(sqrtBVi,Vi);
       ddt(Pi) +=
-          (2. / 3) * 1.28 * (Pi * tau_i / sqrtB) * Grad_par(sqrtB * Vi) * Div_par(Vi);
+          (2. / 3) * 1.28 * (Pi * tau_i / sqrtB) * Grad_par(sqrtBVi) * Div_par(Vi);
 
       if (currents) {
         ddt(Pi) -= (4. / 9) * Pi_ciperp * Div_par(Vi);
         //(4. / 9) * Vi * B32 * Grad_par(Pi_ciperp / B32);
-
-        ddt(Pi) -= (2. / 6) * Pi_ci * Curlb_B * Grad(phi + Pi);
+	Field3D phiPi = phi + Pi;
+	mesh->communicate(phiPi);
+        ddt(Pi) -= (2. / 6) * Pi_ci * Curlb_B * Grad(phiPi);
         ddt(Pi) += (2. / 9) * bracket(Pi_ci, phi + Pi, BRACKET_ARAKAWA) * bracket_factor;
       }
     }

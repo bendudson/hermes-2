@@ -2353,7 +2353,7 @@ int Hermes::rhs(BoutReal t) {
   }
 
   // Collisional damping (normalised)
-  if (resistivity || (!electromagnetic && !FiniteElMass)) {
+  if (currents && (resistivity || (!electromagnetic && !FiniteElMass))) {
     // Need to calculate nu if electrostatic and zero electron mass
     nu = resistivity_multiply / (1.96 * tau_e * mi_me);
 
@@ -2420,6 +2420,8 @@ int Hermes::rhs(BoutReal t) {
         }
       }
     }
+
+    nu.applyBoundary(t);
   }
 
   if (thermal_conduction || sinks) {
@@ -2466,10 +2468,8 @@ int Hermes::rhs(BoutReal t) {
 	kappa_epar(r.ind, mesh->yend + 1, jz) = kappa_epar(r.ind, mesh->yend, jz);
 	kappa_ipar(r.ind, mesh->yend + 1, jz) = kappa_ipar(r.ind, mesh->yend, jz);
       }
-    }  
+    }
   }
-
-  nu.applyBoundary(t);
 
   if (ion_viscosity) {
     ///////////////////////////////////////////////////////////

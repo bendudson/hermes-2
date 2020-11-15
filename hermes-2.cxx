@@ -364,10 +364,31 @@ int Hermes::init(bool restarting) {
     sol_te = FieldFactory::get()->parse("sol_te", &optsc);
   }
 
-  OPTION(optsc, radial_buffers, false);
+  radial_buffers = optsc["radial_buffers"]
+    .doc("Turn on radial buffer regions?").withDefault<bool>(false);
   OPTION(optsc, radial_inner_width, 4);
   OPTION(optsc, radial_outer_width, 4);
   OPTION(optsc, radial_buffer_D, 1.0);
+  
+  // Only average in Y if in a closed field line region
+  radial_inner_averagey = mesh->periodicY(1)
+                          & optsc["radial_core_averagey"]
+                                .doc("Average Ne, Pe and Pi in Y in core radial buffer?")
+                                .withDefault<bool>(true);
+  // Note: It is probably a bad idea to do this, but you never know...
+  radial_inner_averagey_vort = mesh->periodicY(1)
+                               & optsc["radial_core_averagey_vort"]
+                                     .doc("Average Vort in Y in core radial buffer?")
+                                     .withDefault<bool>(false);
+  // These treatments of NVi might be reasonable choices, but are off by default
+  radial_inner_averagey_nvi = mesh->periodicY(1)
+                              & optsc["radial_core_averagey_nvi"]
+                                    .doc("Average NVi in Y in core radial buffer?")
+                                    .withDefault<bool>(false);
+  radial_inner_zero_nvi = mesh->periodicY(1)
+                          & optsc["radial_core_zero_nvi"]
+                                .doc("Damp NVi toward zero in core radial buffer?")
+                                .withDefault<bool>(false);
 
   resistivity_boundary = optsc["resistivity_boundary"]
     .doc("Normalised resistivity in radial boundary region")
@@ -3396,11 +3417,30 @@ int Hermes::rhs(BoutReal t) {
   if (radial_buffers) {
     /// Radial buffer regions
 
-    // Calculate flux sZ averages
-    Field2D PeDC = averageY(DC(Pe));
-    Field2D PiDC = averageY(DC(Pi));
-    Field2D NeDC = averageY(DC(Ne));
-    Field2D VortDC = averageY(DC(Vort));
+    // Calculate flux Z averages.
+    // This is used for both inner and outer boundaries
+    Field2D PeDC = DC(Pe);
+    Field2D PiDC = DC(Pi);
+    Field2D NeDC = DC(Ne);
+    Field2D VortDC = DC(Vort);
+    Field2D NViDC = DC(NVi);
+
+    // Flux surface averages.
+    // In the core region it can be desirable to damp towards a flux surface average
+
+    // First the plasma density and pressures, which should be approximately
+    // constant on core flux surfaces
+    Field2D PeInner = radial_inner_averagey ? averageY(PeDC) : PeDC;
+    Field2D PiInner = radial_inner_averagey ? averageY(PiDC) : PiDC;
+    Field2D NeInner = radial_inner_averagey ? averageY(NeDC) : NeDC;
+    
+    // Vorticity. Probably usually don't usually want to average this in Y
+    Field2D VortInner = radial_inner_averagey_vort ? averageY(VortDC) : VortDC;
+    
+    // Parallel flow can be damped to zero, a constant value, or allowed to vary in Y
+    Field2D NViInner = radial_inner_zero_nvi
+                           ? 0.0
+                           : (radial_inner_averagey_nvi ? averageY(NViDC) : NViDC);
 
     if ((mesh->getGlobalXIndex(mesh->xstart) - mesh->xstart) < radial_inner_width) {
       // This processor contains points inside the inner radial boundary
@@ -3438,11 +3478,11 @@ int Hermes::rhs(BoutReal t) {
 
           for (int k = 0; k < ncz; ++k) {
             // Relax towards constant value on flux surface
-            ddt(Pe)(i, j, k) -= D * (Pe(i, j, k) - PeDC(i, j));
-            ddt(Pi)(i, j, k) -= D * (Pi(i, j, k) - PiDC(i, j));
-            ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeDC(i, j));
-            ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortDC(i, j));
-            ddt(NVi)(i, j, k) -= D * NVi(i, j, k);
+            ddt(Pe)(i, j, k) -= D * (Pe(i, j, k) - PeInner(i, j));
+            ddt(Pi)(i, j, k) -= D * (Pi(i, j, k) - PiInner(i, j));
+            ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeInner(i, j));
+            ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortInner(i, j));
+            ddt(NVi)(i, j, k) -= D * (NVi(i, j, k) - NViInner(i, j));
             
             // Radial fluxes
             BoutReal f = D * (Ne(i + 1, j, k) - Ne(i, j, k));
@@ -3503,8 +3543,10 @@ int Hermes::rhs(BoutReal t) {
             ddt(Pi)(i, j, k) -= D * (Pi(i, j, k) - PiDC(i, j));
             ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeDC(i, j));
             ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortDC(i, j));
-            // ddt(Vort)(i,j,k) -= D*Vort(i,j,k);
+            ddt(NVi)(i, j, k) -= D * (NVi(i, j, k) - NViDC(i, j));
 
+            // Radial fluxes
+            
             BoutReal f = D * (Vort(i + 1, j, k) - Vort(i, j, k));
             ddt(Vort)(i, j, k) += f * x_factor;
             ddt(Vort)(i + 1, j, k) -= f * xp_factor;

@@ -236,6 +236,10 @@ private:
   bool split_n0;        // Split solve into n=0 and n~=0?
   LaplaceXY *laplacexy; // Laplacian solver in X-Y (n=0)
   Field2D phi2D;        // Axisymmetric phi
+
+  bool phi_boundary_relax; ///< Relax the boundary towards Neumann?
+  BoutReal phi_boundary_timescale; ///< Relaxation timescale
+  BoutReal phi_boundary_last_update; ///< The last time the boundary was updated
   
   bool newXZsolver; 
   Laplacian *phiSolver; // Old Laplacian in X-Z

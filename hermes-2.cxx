@@ -228,6 +228,13 @@ const Field3D ceil(const Field3D &var, BoutReal f, REGION rgn = RGN_ALL) {
 // Square function for vectors
 Field3D SQ(const Vector3D &v) { return v * v; }
 
+/// Modifies and returns the first argument, taking the boundary from second argument
+/// This is used because unfortunately Field3D::setBoundary returns void
+Field3D withBoundary(Field3D &&f, const Field3D &bndry) {
+  f.setBoundaryTo(bndry);
+  return f;
+}
+
 int Hermes::init(bool restarting) {
 
   auto& opt = Options::root();
@@ -1218,7 +1225,10 @@ int Hermes::rhs(BoutReal t) {
           // Solve non-axisymmetric part using X-Z solver
           if (newXZsolver) {
             newSolver->setCoefs(1. / SQ(coord->Bxy), 0.0);
-            phi = newSolver->solve(Vort - Vort2D, phi + Pi); // Second argument is initial guess
+            phi = newSolver->solve(Vort - Vort2D,
+                                   // Second argument is initial guess. Use current phi, and update boundary
+                                   withBoundary(phi + Pi - phi2D, // Value in domain
+                                                phi_boundary3d - phi_boundary2d)); // boundary
           } else {
             phiSolver->setCoefC(1. / SQ(coord->Bxy));
             phi = phiSolver->solve((Vort - Vort2D) * SQ(coord->Bxy),
@@ -1231,10 +1241,11 @@ int Hermes::rhs(BoutReal t) {
           // Solve all components using X-Z solver
 
           if (newXZsolver) {
-            // Use the new LaplaceXY solver
-            // newSolver->setCoefs(1./SQ(coord->Bxy), 0.0); // Set when
-            // initialised
-            phi = newSolver->solve(Vort, phi);
+            // Use the new LaplaceXZ solver
+            // newSolver->setCoefs(1./SQ(coord->Bxy), 0.0); // Set when initialised
+            phi = newSolver->solve(Vort,
+                                   withBoundary(phi + Pi,  // Value in domain
+                                                phi_boundary3d)); // boundary
           } else {
             // Use older Laplacian solver
             // phiSolver->setCoefC(1./SQ(coord->Bxy)); // Set when initialised

@@ -3524,11 +3524,16 @@ int Hermes::rhs(BoutReal t) {
 
     // Field3D nsink = 0.5*Ne*sqrt(Telim)*sink_invlpar;   // n C_s/ (2L)  //
     // Sound speed flow to targets
-    Field3D nsink = floor(0.5 * sqrt(Ti + Telim) * Ne * sink_invlpar, 0.0);
+    Field3D nsink = 0.5 * sqrt(Ti) * Ne * sink_invlpar;
+    nsink = floor(nsink, 0.0);
 
     ddt(Ne) -= nsink;
-    ddt(Pe) -= (2./3) * kappa_epar * Te * SQ(sink_invlpar) * Te * nsink;
-    ddt(Pi) -= (2./3) * kappa_ipar * Ti * SQ(sink_invlpar) * Ti * nsink;
+
+    Field3D conduct = (2. / 3) * kappa_epar * Te * SQ(sink_invlpar);
+    conduct = floor(conduct, 0.0);
+    ddt(Pe) -= conduct      // Heat conduction
+               + Te * nsink // Advection
+        ;
 
     if (sheath_closure) {
       ///////////////////////////
@@ -3627,7 +3632,8 @@ const Field3D Hermes::Grad_parP(const Field3D &f) {
 }
 
 const Field3D Hermes::Div_parP(const Field3D &f) {
-  return Div_par(f); //+ 0.5*beta_e*coord->Bxy*bracket(psi, f/coord->Bxy, BRACKET_ARAKAWA);
+  return Div_par(f);
+  //+ 0.5*beta_e*coord->Bxy*bracket(psi, f/coord->Bxy, BRACKET_ARAKAWA);
 }
 
 // Standard main() function

@@ -48,6 +48,8 @@ private:
   // Equilibrium current
   Field2D Jpar0;
 
+  BoutReal nesheath_floor; // Density floor used in sheath boundary conditions
+
   // Evolving variables
   Field3D Ne;         // Electron density
   Field3D Pe, Pi;     // Electron and Ion pressures
@@ -115,6 +117,7 @@ private:
   bool thermal_force; // Force due to temperature gradients
   bool electron_viscosity; // Electron parallel viscosity
   bool ion_viscosity;   // Ion viscosity
+  bool ion_viscosity_par; // Parallel part of ion viscosity
   bool electron_neutral;   // Include electron-neutral collisions in resistivity
   bool ion_neutral;        // Include ion-neutral collisions in ion collision time
   bool poloidal_flows;  // Include y derivatives in diamagnetic and ExB drifts
@@ -147,6 +150,10 @@ private:
   int radial_inner_width; // Number of points in the inner radial buffer
   int radial_outer_width; // Number of points in the outer radial buffer
   BoutReal radial_buffer_D; // Diffusion in buffer region
+  bool radial_inner_averagey; // Average Ne, Pe, Pi fields in Y in inner radial buffer
+  bool radial_inner_averagey_vort; // Average vorticity in Y in inner buffer
+  bool radial_inner_averagey_nvi; // Average NVi in Y in inner buffer
+  bool radial_inner_zero_nvi; // Damp NVi towards zero in inner buffer
 
   bool phi_smoothing;
   BoutReal phi_sf;
@@ -170,6 +177,10 @@ private:
 
   Field2D wall_flux; // Particle flux to wall (diagnostic)
   Field2D wall_power; // Power flux to wall (diagnostic)
+  
+  // Fix density in SOL
+  bool sol_fix_profiles;
+  std::shared_ptr<FieldGenerator> sol_ne, sol_te; // Generating functions
   
   // Output switches for additional information
   bool verbose;    // Outputs additional fields, mainly for debugging
@@ -245,6 +256,10 @@ private:
   // std::unique_ptr<LaplaceXY> laplacexy{nullptr};
   LaplaceXY *laplacexy; // Laplacian solver in X-Y (n=0)
   Field2D phi2D;        // Axisymmetric phi
+
+  bool phi_boundary_relax; ///< Relax the boundary towards Neumann?
+  BoutReal phi_boundary_timescale; ///< Relaxation timescale
+  BoutReal phi_boundary_last_update; ///< The last time the boundary was updated
   
   bool newXZsolver; 
   std::unique_ptr<Laplacian> phiSolver{nullptr}; // Old Laplacian in X-Z

@@ -285,6 +285,13 @@ void zero_all(Field3D &f) {
   f.ydown() = 0.0;
 }
 
+/// Modifies and returns the first argument, taking the boundary from second argument
+/// This is used because unfortunately Field3D::setBoundary returns void
+Field3D withBoundary(Field3D &&f, const Field3D &bndry) {
+  f.setBoundaryTo(bndry);
+  return f;
+}
+
 int Hermes::init(bool restarting) {
 
   auto& opt = Options::root();
@@ -328,7 +335,8 @@ int Hermes::init(bool restarting) {
                     .withDefault<bool>(true);
   
   OPTION(optsc, electron_viscosity, true);
-  OPTION(optsc, ion_viscosity, true);
+  ion_viscosity = optsc["ion_viscosity"].doc("Include ion viscosity?").withDefault<bool>(true);
+  ion_viscosity_par = optsc["ion_viscosity_par"].doc("Include parallel diffusion of ion momentum?").withDefault<bool>(ion_viscosity);
 
   electron_neutral = optsc["electron_neutral"]
                        .doc("Include electron-neutral collisions in resistivity?")
@@ -444,7 +452,8 @@ int Hermes::init(bool restarting) {
           .doc("If plasma is faster than sound speed, go to plasma velocity")
           .withDefault<bool>(true);
 
-  OPTION(optsc, radial_buffers, false);
+  radial_buffers = optsc["radial_buffers"]
+    .doc("Turn on radial buffer regions?").withDefault<bool>(false);
   OPTION(optsc, radial_inner_width, 4);
   OPTION(optsc, radial_outer_width, 4);
   OPTION(optsc, radial_buffer_D, 1.0);
@@ -920,60 +929,94 @@ int Hermes::init(bool restarting) {
 
   Curlb_B *= 2. / coord->Bxy;
 
-  SAVE_REPEAT(phi);
+  //////////////////////////////////////////////////////////////
+  // Electromagnetic fields
+  
+  if (j_par | j_diamag) {
+    // Only needed if there are any currents
+    SAVE_REPEAT(phi);
 
-  if (j_par) {
-    SAVE_REPEAT(Ve);
+    if (j_par) {
+      SAVE_REPEAT(Ve);
 
-    if (electromagnetic)
-      SAVE_REPEAT(psi);
-  }
+      if (electromagnetic)
+        SAVE_REPEAT(psi);
+    }
 
-  OPTION(optsc, split_n0, false); // Split into n=0 and n~=0
-  OPTION(optsc, split_n0_psi, split_n0);
-  // Phi solver
-  if (phi3d) {
+    OPTION(optsc, split_n0, false); // Split into n=0 and n~=0
+    OPTION(optsc, split_n0_psi, split_n0);
+    // Phi solver
+    if (phi3d) {
 #ifdef PHISOLVER
-    phiSolver3D = Laplace3D::create();
+      phiSolver3D = Laplace3D::create();
 #endif
-  } else {
-    if (split_n0) {
-      // Create an XY solver for n=0 component
-      laplacexy = new LaplaceXY(mesh);
-      // Set coefficients for Boussinesq solve
-      laplacexy->setCoefs(1. / SQ(DC(coord->Bxy)), 0.0);
-      phi2D = 0.0; // Starting guess
-    }
-
-    // Create an XZ solver
-    OPTION(optsc, newXZsolver, false);
-    if (newXZsolver) {
-      // Test new LaplaceXZ solver
-      newSolver = LaplaceXZ::create(bout::globals::mesh);
-      // Set coefficients for Boussinesq solve
-      newSolver->setCoefs(Field3D(1.0), Field3D(0.0));
     } else {
-      // Use older Laplacian solver
-      phiSolver = Laplacian::create(&opt["phiSolver"]);
-      // Set coefficients for Boussinesq solve
-      phiSolver->setCoefC(1. / SQ(coord->Bxy));
+      if (split_n0) {
+	// Create an XY solver for n=0 component
+	laplacexy = new LaplaceXY(mesh);
+	// Set coefficients for Boussinesq solve
+	laplacexy->setCoefs(1. / SQ(DC(coord->Bxy)), 0.0);
+	phi2D = 0.0; // Starting guess
+      }
+
+      // Create an XZ solver
+      OPTION(optsc, newXZsolver, false);
+      if (newXZsolver) {
+	// Test new LaplaceXZ solver
+	newSolver = LaplaceXZ::create(bout::globals::mesh);
+	// Set coefficients for Boussinesq solve
+	newSolver->setCoefs(Field3D(1.0), Field3D(0.0));
+      } else {
+	// Use older Laplacian solver
+	phiSolver = Laplacian::create(&opt["phiSolver"]);
+	// Set coefficients for Boussinesq solve
+	phiSolver->setCoefC(1. / SQ(coord->Bxy));
+      }
+      phi = 0.0;
+      phi.setBoundary("phi"); // For y boundaries
+    
+      phi_boundary_relax = optsc["phi_boundary_relax"]
+	.doc("Relax x boundaries of phi towards Neumann?")
+	.withDefault<bool>(false);
+
+      // Add phi to restart files so that the value in the boundaries
+      // is restored on restart. This is done even when phi is not evolving,
+      // so that phi can be saved and re-loaded
+      restart.addOnce(phi, "phi");
+
+      if (phi_boundary_relax) {
+
+	if (!restarting) {
+	  // Start by setting to the sheath current = 0 boundary value
+	  phi.setBoundaryTo(DC(
+			       (log(0.5 * sqrt(mi_me / PI)) + log(sqrt(Telim / (Telim + Tilim)))) * Telim));
+	}
+
+	// Set the last update time to -1, so it will reset
+	// the first time RHS function is called 
+	phi_boundary_last_update = -1.;
+
+	phi_boundary_timescale = optsc["phi_boundary_timescale"]
+	  .doc("Timescale for phi boundary relaxation [seconds]")
+	  .withDefault(1e-4)
+	  * Omega_ci; // Normalise to internal time units
+      }
+    
+      // Apar (Psi) solver
+      aparSolver = LaplaceXZ::create(mesh, &opt["aparSolver"], CELL_CENTRE);
+      if (split_n0_psi) {
+	// Use another XY solver for n=0 psi component
+	aparXY = new LaplaceXY(mesh);
+	psi2D = 0.0;
+      }
+
+      Ve.setBoundary("Ve");
+      nu.setBoundary("nu");
+      Jpar.setBoundary("Jpar");
+
+      psi = 0.0;
     }
-    phi = 0.0;
   }
-
-  // Apar (Psi) solver
-  aparSolver = LaplaceXZ::create(bout::globals::mesh, &opt["aparSolver"], CELL_CENTRE);
-  if (split_n0_psi) {
-    // Use another XY solver for n=0 psi component
-    aparXY = new LaplaceXY(mesh);
-    psi2D = 0.0;
-  }
-
-  Ve.setBoundary("Ve");
-  nu.setBoundary("nu");
-  phi.setBoundary("phi"); // For y boundaries
-  Jpar.setBoundary("Jpar");
-
   nu = 0.0;
   kappa_epar = 0.0;
   kappa_ipar = 0.0;
@@ -1157,6 +1200,96 @@ int Hermes::rhs(BoutReal t) {
     // phi = 0.0; // Already set in initialisation
   } else {
     // Solve phi from Vorticity
+
+    // Set the boundary of phi. Both 2D and 3D fields are kept, though the 3D field
+    // is constant in Z. This is for efficiency, to reduce the number of conversions.
+    // Note: For now the boundary values are all at the midpoint,
+    //       and only phi is considered, not phi + Pi which is handled in Boussinesq solves
+    Field2D phi_boundary2d;
+    Field3D phi_boundary3d;
+    
+    if (phi_boundary_relax) {
+      // Update the boundary regions by relaxing towards zero gradient
+      // on a given timescale.
+
+      if (phi_boundary_last_update < 0.0) {
+        // First time this has been called.
+        phi_boundary_last_update = t;
+        
+      } else if (t > phi_boundary_last_update) {
+        // Only update if time has advanced
+        // Uses an exponential decay of the weighting of the value in the boundary
+        // so that the solution is well behaved for arbitrary steps
+        BoutReal weight = exp(-(t - phi_boundary_last_update) / phi_boundary_timescale);
+        phi_boundary_last_update = t;
+
+        if (mesh->firstX()) {
+          for (int j = mesh->ystart; j <= mesh->yend; j++) {
+            BoutReal phivalue = 0.0;
+            for (int k = 0; k < mesh->LocalNz; k++) {
+              phivalue += phi(mesh->xstart, j, k);
+            }
+            phivalue /= mesh->LocalNz; // Average in Z of point next to boundary
+
+            // Old value of phi at boundary
+            BoutReal oldvalue =
+                0.5 * (phi(mesh->xstart - 1, j, 0) + phi(mesh->xstart, j, 0));
+
+            // New value of phi at boundary, relaxing towards phivalue
+            BoutReal newvalue =
+                weight * oldvalue + (1. - weight) * phivalue;
+
+            // Set phi at the boundary to this value
+            for (int k = 0; k < mesh->LocalNz; k++) {
+              phi(mesh->xstart - 1, j, k) = 2.*newvalue - phi(mesh->xstart, j, k);
+
+              // Note: This seems to make a difference, but don't know why.
+              // Without this, get convergence failures with no apparent instability
+              // (all fields apparently smooth, well behaved)
+              phi(mesh->xstart - 2, j, k) = phi(mesh->xstart - 1, j, k);
+            }
+          }
+        }
+
+        if (mesh->lastX()) {
+          for (int j = mesh->ystart; j <= mesh->yend; j++) {
+            BoutReal phivalue = 0.0;
+            for (int k = 0; k < mesh->LocalNz; k++) {
+              phivalue += phi(mesh->xend, j, k);
+            }
+            phivalue /= mesh->LocalNz; // Average in Z of point next to boundary
+
+            // Old value of phi at boundary
+            BoutReal oldvalue = 0.5 * (phi(mesh->xend + 1, j, 0) + phi(mesh->xend, j, 0));
+
+            // New value of phi at boundary, relaxing towards phivalue
+            BoutReal newvalue = weight * oldvalue + (1. - weight) * phivalue;
+
+            // Set phi at the boundary to this value
+            for (int k = 0; k < mesh->LocalNz; k++) {
+              phi(mesh->xend + 1, j, k) = 2.*newvalue - phi(mesh->xend, j, k);
+
+              // Note: This seems to make a difference, but don't know why.
+              // Without this, get convergence failures with no apparent instability
+              // (all fields apparently smooth, well behaved)
+              phi(mesh->xend + 2, j, k) = phi(mesh->xend + 1, j, k);
+            }
+          }
+        }
+      }
+      phi_boundary3d = phi;
+    } else {
+      // phi_boundary_relax = false
+      //
+      // Set boundary from temperature, to be consistent with j=0 at sheath
+    
+      // Sheath multiplier Te -> phi (2.84522 for Deuterium if Ti = 0)
+      phi_boundary2d =
+          DC((log(0.5 * sqrt(mi_me / PI)) + log(sqrt(Telim / (Telim + Tilim)))) * Telim);
+      
+      phi_boundary3d = phi_boundary2d;
+    }
+    
     if (phi3d) {
 #ifdef PHISOLVER
       phiSolver3D->setCoefC(Ne / SQ(coord->Bxy));
@@ -1174,33 +1307,71 @@ int Hermes::rhs(BoutReal t) {
       // Phi flags should be set in BOUT.inp
       // phiSolver->setInnerBoundaryFlags(INVERT_DC_GRAD);
       // phiSolver->setOuterBoundaryFlags(INVERT_SET);
-
-      // Sheath multiplier Te -> phi (2.84522 for Deuterium)
-      BoutReal sheathmult = log(0.5 * sqrt(mi_me / PI));
-
+      
       if (boussinesq) {
 
+        // Update boundary conditions. Two issues:
+        // 1) Solving here for phi + Pi, and then subtracting Pi from the result
+        //    The boundary values should therefore include Pi
+        // 2) The INVERT_SET flag takes the value in the guard (boundary) cell
+        //    and sets the boundary between cells to this value.
+        //    This shift by 1/2 grid cell is important.
+
+        if (mesh->firstX()) {
+          for (int j = mesh->ystart; j <= mesh->yend; j++) {
+            for (int k = 0; k < mesh->LocalNz; k++) {
+              // Average phi + Pi at the boundary, and set the boundary cell
+              // to this value. The phi solver will then put the value back
+              // onto the cell mid-point
+              phi_boundary3d(mesh->xstart - 1, j, k) =
+                  0.5
+                  * (phi_boundary3d(mesh->xstart - 1, j, k) +
+                     phi_boundary3d(mesh->xstart, j, k) +
+                     Pi(mesh->xstart - 1, j, k) +
+                     Pi(mesh->xstart, j, k));
+            }
+          }
+        }
+
+        if (mesh->lastX()) {
+          for (int j = mesh->ystart; j <= mesh->yend; j++) {
+            for (int k = 0; k < mesh->LocalNz; k++) {
+              phi_boundary3d(mesh->xend + 1, j, k) =
+                  0.5
+                  * (phi_boundary3d(mesh->xend + 1, j, k) +
+                     phi_boundary3d(mesh->xend, j, k) +
+                     Pi(mesh->xend + 1, j, k) +
+                     Pi(mesh->xend, j, k));
+            }
+          }
+        }
         if (split_n0) {
           ////////////////////////////////////////////
           // Boussinesq, split
           // Split into axisymmetric and non-axisymmetric components
           Field2D Vort2D = DC(Vort); // n=0 component
 
-          // Set the boundary to 2.8*Te
-          // phi2D.setBoundaryTo(sheathmult * floor(Te.DC(), 0.0));
-          phi2D.setBoundaryTo(sheathmult * DC(Telim));
+          if (!phi_boundary2d.isAllocated()) {
+            // Make sure that the 2D boundary field is set
+            phi_boundary2d = DC(phi_boundary3d);
+          }
+          
+          // Set the boundary
+          phi2D.setBoundaryTo(phi_boundary2d);
 
           phi2D = laplacexy->solve(Vort2D, phi2D);
 
           // Solve non-axisymmetric part using X-Z solver
           if (newXZsolver) {
-            newSolver->setCoefs(Field3D(1. / SQ(coord->Bxy)), Field3D(0.0));
-            phi = newSolver->solve(Vort - Vort2D, phi);
+            newSolver->setCoefs(1. / SQ(coord->Bxy), 0.0);
+            phi = newSolver->solve(Vort - Vort2D,
+                                   // Second argument is initial guess. Use current phi, and update boundary
+                                   withBoundary(phi + Pi - phi2D, // Value in domain
+                                                phi_boundary3d - phi_boundary2d)); // boundary
           } else {
             phiSolver->setCoefC(1. / SQ(coord->Bxy));
-            // phi = phiSolver->solve((Vort-Vort2D)*SQ(coord->Bxy), phi);
             phi = phiSolver->solve((Vort - Vort2D) * SQ(coord->Bxy),
-                                   sheathmult * (Telim - DC(Telim)));
+                                   phi_boundary3d - phi_boundary2d); // Note: non-zero due to Pi variation
           }
           phi += phi2D; // Add axisymmetric part
         } else {
@@ -1209,39 +1380,32 @@ int Hermes::rhs(BoutReal t) {
           // Solve all components using X-Z solver
 
           if (newXZsolver) {
-            // Use the new LaplaceXY solver
-            // newSolver->setCoefs(1./SQ(coord->Bxy), 0.0); // Set when
-            // initialised
-            phi = newSolver->solve(Vort, phi);
+            // Use the new LaplaceXZ solver
+            // newSolver->setCoefs(1./SQ(coord->Bxy), 0.0); // Set when initialised
+            phi = newSolver->solve(Vort,
+                                   withBoundary(phi + Pi,  // Value in domain
+                                                phi_boundary3d)); // boundary
           } else {
             // Use older Laplacian solver
             // phiSolver->setCoefC(1./SQ(coord->Bxy)); // Set when initialised
-            phi = phiSolver->solve(Vort * SQ(coord->Bxy), (sheathmult + log(sqrt(Telim / (Telim + Tilim)))) * Telim );
+            phi = phiSolver->solve(Vort * SQ(coord->Bxy), phi_boundary3d);
           }
         }
         
         // Hot ion term in vorticity
-        // phi -= Pi;
+        phi -= Pi;
 
       } else {
         ////////////////////////////////////////////
         // Non-Boussinesq
         //
         throw BoutException("Non-Boussinesq not implemented yet");
-
-        phiSolver->setCoefC(Nelim / SQ(coord->Bxy));
-        phi = phiSolver->solve(Vort * SQ(coord->Bxy) / Nelim, sheathmult * Telim);
       }
     }
     phi.applyBoundary(t);
     mesh->communicate(phi);
   }
-  if (phi_smoothing){
-    BOUT_FOR(i, phi.getRegion("RGN_OUTER_X")) {
-      phi[i] = phi_sf * phi[i-1] + (1-phi_sf)*phi[i];
-    }
-    mesh->communicate(phi);
-  }
+
 
   //////////////////////////////////////////////////////////////
   // Calculate perturbed magnetic field psi
@@ -2202,16 +2366,7 @@ int Hermes::rhs(BoutReal t) {
       */
     }	
   }
-  /*
-  output.write("{} {} {} : {} {} {} : {} {} {} => {}\n",
-               Ne.ydown()(29, mesh->yend - 1, 16), Ne(29, mesh->yend, 16),
-               Ne.yup()(29, mesh->yend + 1, 16), Ve.ydown()(29, mesh->yend - 1, 16),
-               Ve(29, mesh->yend, 16), Ve.yup()(29, mesh->yend + 1, 16),
-               mesh->getCoordinates()->Bxy(29, mesh->yend - 1, 16),
-               mesh->getCoordinates()->Bxy(29, mesh->yend, 16),
-               mesh->getCoordinates()->Bxy(29, mesh->yend + 1, 16),
-               ddt(Ne)(29, mesh->yend, 16));
-  */
+
   if (j_diamag) {
     // Diamagnetic drift, formulated as a magnetic drift
     // i.e Grad-B + curvature drift
@@ -2332,7 +2487,9 @@ int Hermes::rhs(BoutReal t) {
     // are included.
 
     if (j_par) {
+      TRACE("Vort:j_par");
       // Parallel current
+      
       // This term is central differencing so that it balances the parallel gradient
       // of the potential in Ohm's law
       if(fci_transform){mesh->communicate(Jpar);}
@@ -2383,12 +2540,18 @@ int Hermes::rhs(BoutReal t) {
 
 	if (j_pol_extra_terms) {
 	  // delp2 phi v_ExB term
-	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi, vort_bndry_flux,
+	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi+Pi, vort_bndry_flux,
 	  				     poloidal_flows) * bracket_factor;
 
+
 	  // delp2 phi v_di term
-	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, Pi, vort_bndry_flux,
-	  				     poloidal_flows) * bracket_factor;
+	  // ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, Pi, vort_bndry_flux,
+	  // 				     poloidal_flows) * bracket_factor;
+
+
+	  // c = Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, Pi, vort_bndry_flux,
+	  // 				     poloidal_flows) * bracket_factor;
+
 	  // Field3D delpphi_2b2Pi = mul_all(DelpPhi_2B2, Pi);
 	  // mesh->communicate(delpphi_2b2Pi);
 	  // ddt(Vort) -= fci_curvature(delpphi_2b2Pi);
@@ -2623,7 +2786,7 @@ int Hermes::rhs(BoutReal t) {
       }
     }
     if(!fci_transform){
-      ddt(NVi) -= FV::Div_par_fvv(NVi, Vi, sound_speed, false);
+      ddt(NVi) -= FV::Div_par_fvv(Ne, Vi, sound_speed, false);
     }else{
       // Skew-symmetric form
       ddt(NVi) -= 0.5 * (Div_par(mul_all(NVi, Vi)) + Vi * Grad_par(NVi) + NVi * Div_par(Vi));
@@ -2775,7 +2938,8 @@ int Hermes::rhs(BoutReal t) {
 
       // This term energetically balances diamagnetic term
       // in the vorticity equation
-      ddt(Pe) -= (2. / 3) * Pe * (Curlb_B * Grad(phi));
+      // ddt(Pe) -= (2. / 3) * Pe * (Curlb_B * Grad(phi));
+      ddt(Pe) -= (2. / 3) * Pe * fci_curvature(phi);
     }
 
     // Parallel heat conduction
@@ -3068,7 +3232,8 @@ int Hermes::rhs(BoutReal t) {
       // Compression of ExB flow
       // These terms energetically balances diamagnetic term
       // in the vorticity equation
-      ddt(Pi) -= (2. / 3) * Pi * (Curlb_B * Grad(phi));
+      // ddt(Pi) -= (2. / 3) * Pi * (Curlb_B * Grad(phi));
+      ddt(Pi) -= (2. / 3) * Pi * fci_curvature(phi);
 
       if (fci_transform) {
         // Vector3D pipecb = (Pi + Pe);

@@ -253,7 +253,7 @@ int Hermes::init(bool restarting) {
               .doc("Parallel current:    Vort <-> Psi")
               .withDefault<bool>(true);
 
-  OPTION(optsc, j_pol_terms, true);
+  OPTION(optsc, j_pol_terms, false);
   OPTION(optsc, parallel_flow, true);
   OPTION(optsc, parallel_flow_p_term, parallel_flow);
   OPTION(optsc, pe_par, true);

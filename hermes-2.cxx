@@ -2201,14 +2201,15 @@ int Hermes::rhs(BoutReal t) {
         0.49 * (qipar / Pilim) *
             (2.27 * Grad_par(log(Tilim)) - Grad_par(log(Pilim))) +
         0.75 * (0.2 * SQ(qipar) - 0.085 * qisq) / (Pilim * Tilim);
-    
+
     // Parallel part
     Pi_cipar = -0.96 * Pi * tau_i *
                (2. * Grad_par(Vi) + Vi * Grad_par(log(coord->Bxy)));
     // Could also be written as:
     // Pi_cipar = -
     // 0.96*Pi*tau_i*2.*Grad_par(sqrt(coord->Bxy)*Vi)/sqrt(coord->Bxy);
-    
+
+
     if (mesh->firstX()) {
       // First cells in X subject to boundary effects.
       for(int i=mesh->xstart; (i <= mesh->xend) && (i < 4); i++) {
@@ -2428,9 +2429,8 @@ int Hermes::rhs(BoutReal t) {
       ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
 
       if (j_pol_terms){
-	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi, vort_bndry_flux,
+	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi + Pi, vort_bndry_flux,
 					   poloidal_flows);
-	ddt(Vort) -= FV::Div_f_v(DelpPhi_2B2, Tilim * Curlb_B, vort_bndry_flux);
       }
 
     } else {

@@ -48,6 +48,10 @@ private:
   // Equilibrium current
   Field2D Jpar0;
 
+  // Diagnosing sim variables
+  Field2D NeErr;
+  Field2D NeErr_inp;
+  
   BoutReal nesheath_floor; // Density floor used in sheath boundary conditions
 
   // Evolving variables
@@ -101,7 +105,12 @@ private:
   
   bool electromagnetic; // Include magnetic potential psi
   bool FiniteElMass;    // Finite Electron Mass
+
   
+  BoutReal TIMESTEP;
+  BoutReal NOUT;
+  BoutReal ramp_j_diamag; // coefficient to ramp up the drive for current terms in vorticity equation
+  FieldGeneratorPtr  ramp_j_diamag_generator;
   bool j_diamag;    // Diamagnetic current: Vort <-> Pe
   bool j_par;       // Parallel current:    Vort <-> Psi
   bool parallel_flow;
@@ -125,6 +134,7 @@ private:
   BoutReal anomalous_D;    // Density diffusion
   BoutReal anomalous_chi;  // Electron thermal diffusion
   BoutReal anomalous_nu;   // Momentum diffusion (kinematic viscosity)
+  BoutReal anomalous_nu_nDC; // Momentum diffusion (non-DC components included)
 
   bool anomalous_D_nvi; // Include terms in momentum equation
   bool anomalous_D_pepi; // Include terms in Pe, Pi equations
@@ -141,6 +151,7 @@ private:
   bool sheath_closure; // Sheath closure sink on vorticity (if sinks = true)
   bool drift_wave;     // Drift-wave closure (if sinks=true)
 
+  bool slab_radial_buffers; // Radial buffer regions for slab geometry sims
   bool radial_buffers; // Radial buffer regions
   int radial_inner_width; // Number of points in the inner radial buffer
   int radial_outer_width; // Number of points in the outer radial buffer
@@ -174,6 +185,7 @@ private:
   // Output switches for additional information
   bool verbose;    // Outputs additional fields, mainly for debugging
   bool output_ddt; // Output time derivatives
+  bool diagnostic; // turn diagnostic flag to true if wanting to output extra information
   
   // Numerical dissipation
 

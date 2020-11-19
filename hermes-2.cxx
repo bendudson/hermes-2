@@ -252,6 +252,14 @@ int Hermes::init(bool restarting) {
                      .doc("Include electron inertia in Ohm's law?")
                      .withDefault<bool>(true);
 
+  ramp_j_diamag = optsc["ramp_j_diamag"]
+                      .doc("ramps up current drive for j_diamag term in vorticity eq")
+                      .withDefault(1.0);
+
+  // Options::root()["mesh"]["paralleltransform"].as<std::string>()
+  // TIMESTEP =  Options::root()["TIMESTEP"].as<BoutReal>() * 1e-6;
+  NOUT =  Options::root()["NOUT"].as<BoutReal>();
+  
   j_diamag = optsc["j_diamag"]
                  .doc("Diamagnetic current: Vort <-> Pe")
                  .withDefault<bool>(true);
@@ -325,6 +333,7 @@ int Hermes::init(bool restarting) {
   OPTION(optsc, anomalous_D, -1);
   OPTION(optsc, anomalous_chi, -1);
   OPTION(optsc, anomalous_nu, -1);
+  OPTION(optsc, anomalous_nu_nDC, -1);
   OPTION(optsc, anomalous_D_nvi, true);
   OPTION(optsc, anomalous_D_pepi, true);
 
@@ -372,6 +381,11 @@ int Hermes::init(bool restarting) {
     sol_te = FieldFactory::get()->parse("sol_te", &optsc);
   }
 
+  if (ramp_j_diamag < 1.0) {
+    ramp_j_diamag_generator = FieldFactory::get()->parse("hermes:ramp_j_diamag", Options::getRoot());
+  }
+
+  OPTION(optsc, slab_radial_buffers, false);
   radial_buffers = optsc["radial_buffers"]
     .doc("Turn on radial buffer regions?").withDefault<bool>(false);
   OPTION(optsc, radial_inner_width, 4);
@@ -409,6 +423,7 @@ int Hermes::init(bool restarting) {
   // Output additional information
   OPTION(optsc, verbose, false);    // Save additional fields
   OPTION(optsc, output_ddt, false); // Save time derivatives
+  OPTION(optsc, diagnostic, false);
 
   // Normalisation
   OPTION(optsc, Tnorm, 100);  // Reference temperature [eV]
@@ -459,6 +474,12 @@ int Hermes::init(bool restarting) {
     output.write("\tnormalised anomalous nu_perp = %e\n", anomalous_nu);
   }
 
+  if (anomalous_nu_nDC > 0.0) {
+    //Normalise
+    anomalous_nu_nDC /= rho_s0 * rho_s0 * Omega_ci; //m^2/s
+    output.write("\tnormalised anomalous nu_perp_nDC = %e\n", anomalous_nu_nDC);
+  }
+
   if (ramp_mesh) {
     Jpar0 = 0.0;
   } else {
@@ -485,19 +506,49 @@ int Hermes::init(bool restarting) {
   // Get switches from each variable section
   auto& optne = opt["Ne"];
   NeSource = optne["source"].doc("Source term in ddt(Ne)").withDefault(Field3D{0.0});
-  NeSource /= Omega_ci;
-  Sn = DC(NeSource);
-
   // Inflowing density carries momentum
   OPTION(optne, density_inflow, false);
 
   auto& optpe = opt["Pe"];
   PeSource = optpe["source"].withDefault(Field3D{0.0});
-  PeSource /= Omega_ci;
-  Spe = DC(PeSource);
 
   auto& optpi = opt["Pi"];
   PiSource = optpi["source"].withDefault(Field3D{0.0});
+
+  if (slab_radial_buffers || radial_buffers) {
+    // Need to set the sources in the radial buffer regions to zero
+
+    if ((mesh->getGlobalXIndex(mesh->xstart) - mesh->xstart) < radial_inner_width) {
+
+      int imax = mesh->xstart + radial_inner_width - 1 - 
+                 (mesh->getGlobalXIndex(mesh->xstart) - mesh->xstart);
+      if (imax > mesh->xend) {
+        imax = mesh->xend;
+      }
+      
+      int imin = mesh->xstart;
+      if (!mesh->firstX()) {
+        --imin;
+      }
+
+      int ncz = mesh->LocalNz; 
+
+      for (int i = imin; i <= imax; i++) {
+        for (int j = mesh->ystart; j <= mesh->yend; ++j) {
+          for (int k = 0; k < ncz; ++k) {
+            NeSource(i, j, k) = 0.0;
+            PiSource(i, j, k) = 0.0;
+            PeSource(i, j ,k) = 0.0;
+          }
+        }
+      }
+    }
+  }
+
+  NeSource /= Omega_ci;
+  Sn = DC(NeSource);
+  PeSource /= Omega_ci;
+  Spe = DC(PeSource);
   PiSource /= Omega_ci;
   Spi = DC(PiSource);
 
@@ -509,7 +560,7 @@ int Hermes::init(bool restarting) {
         for (int y = mesh->ystart; y <= mesh->yend; y++) {
           Sn(x, y) = 0.0;
           Spe(x, y) = 0.0;
-	  Spi(x, y) = 0.0;
+	        Spi(x, y) = 0.0;
         }
       }
     }
@@ -524,6 +575,12 @@ int Hermes::init(bool restarting) {
   qmid /= qe * Tnorm * Nnorm * Omega_ci;
   Spe += (2. / 3) * qmid;
 
+  // diagnosing save_repeats - change these depending on which part is malfunctioning
+  if (diagnostic) {
+    SAVE_REPEAT(NeErr);
+    SAVE_REPEAT(NeErr_inp);
+    SAVE_REPEAT(ddt(Sn));
+  }
   // Add variables to solver
   SOLVE_FOR(Ne, Pe, Pi);
   EvolvingVars.add(Ne, Pe, Pi);
@@ -932,6 +989,7 @@ int Hermes::init(bool restarting) {
   Dn = 0.0;
 
   SAVE_REPEAT(Telim, Tilim);
+  SAVE_REPEAT(ramp_j_diamag);
 
   if (verbose) {
     // Save additional fields
@@ -965,7 +1023,6 @@ int Hermes::init(bool restarting) {
 
 int Hermes::rhs(BoutReal t) {
   Coordinates *coord = mesh->getCoordinates();
-  
   if (!evolve_plasma) {
     Ne = 0.0;
     Pe = 0.0;
@@ -976,6 +1033,10 @@ int Hermes::rhs(BoutReal t) {
     sheath_model = 0;
   }
 
+  if (ramp_j_diamag < 1.0) {
+    ramp_j_diamag = ramp_j_diamag_generator->generate(0, 0, 0, t);
+  }
+  
   // Communicate evolving variables
   // Note: Parallel slices are not calculated because parallel derivatives
   // are calculated using field aligned quantities
@@ -2669,7 +2730,8 @@ int Hermes::rhs(BoutReal t) {
   // Source
   if (adapt_source_n) {
     // Add source. Ensure that sink will go to zero as Ne -> 0
-    Field2D NeErr = averageY(DC(Ne) - NeTarget);
+    NeErr_inp = DC(Ne) - NeTarget;
+    NeErr = averageY(NeErr_inp);
 
     if (core_sources) {
       // Sources only in core (periodic Y) domain
@@ -2678,12 +2740,16 @@ int Hermes::rhs(BoutReal t) {
       ddt(Sn) = 0.0;
       for (int x = mesh->xstart; x <= mesh->xend; x++) {
         if (!mesh->periodicY(x))
+	        // puts ("#11111 non periodic Y");
           continue; // Not periodic, so skip
 
         for (int y = mesh->ystart; y <= mesh->yend; y++) {
           Sn(x, y) -= source_p * NeErr(x, y);
           ddt(Sn)(x, y) = -source_i * NeErr(x, y);
-
+          if (diagnostic) {
+            output.write("Normalisation Sn=%e, ddt(Sn)=%e\n", Sn(x,y), ddt(Sn)(x,y));
+	          output.write("Normalisation NeTarget=%e, NeErr_inp=%e, NeErr=%e\n", NeTarget(x,y), NeErr_inp(x,y), NeErr(x,y));
+          }
           if (Sn(x, y) < 0.0) {
             Sn(x, y) = 0.0;
             if (ddt(Sn)(x, y) < 0.0)
@@ -2747,7 +2813,8 @@ int Hermes::rhs(BoutReal t) {
 
       // Note: This term is central differencing so that it balances
       // the corresponding compression term in the pressure equation
-      ddt(Vort) += Div((Pi + Pe) * Curlb_B);
+      
+      ddt(Vort) += ramp_j_diamag * Div((Pi + Pe) * Curlb_B);
     }
 
     // Advection of vorticity by ExB
@@ -2797,6 +2864,12 @@ int Hermes::rhs(BoutReal t) {
       TRACE("Vort:anomalous_nu");
       // Perpendicular anomalous momentum diffusion
       ddt(Vort) += FV::Div_a_Laplace_perp(anomalous_nu, DC(Vort));
+    }
+
+    if (anomalous_nu_nDC > 0.0) {
+      TRACE("Vort:anomalous_nu_nDC");
+      // Perpendicular anomalous momentum diffusion - non-DC components
+      ddt(Vort) += FV::Div_a_Laplace_perp(anomalous_nu_nDC, Vort);
     }
     
     if (ion_neutral_rate > 0.0) {
@@ -3012,6 +3085,10 @@ int Hermes::rhs(BoutReal t) {
     if (anomalous_nu > 0.0) {
       ddt(NVi) += FV::Div_a_Laplace_perp(DC(Ne) * anomalous_nu, DC(Vi));
     }
+
+    if (anomalous_nu_nDC > 0.0) {
+      ddt(NVi) += FV::Div_a_Laplace_perp(Ne * anomalous_nu_nDC, Vi);
+    }
     
     if (hyperpar > 0.0) {
       ddt(NVi) -= hyperpar * FV::D4DY4_Index(Vi) / mi_me;
@@ -3051,11 +3128,11 @@ int Hermes::rhs(BoutReal t) {
 
   if (j_diamag) { // Diamagnetic flow
     // Magnetic drift (curvature) divergence.
-    ddt(Pe) -= (5. / 3) * FV::Div_f_v(Pe, -Telim * Curlb_B, pe_bndry_flux);
+    ddt(Pe) -= ramp_j_diamag * (5. / 3) * FV::Div_f_v(Pe, -Telim * Curlb_B, pe_bndry_flux);
 
     // This term energetically balances diamagnetic term
     // in the vorticity equation
-    ddt(Pe) -= (2. / 3) * Pe * (Curlb_B * Grad(phi));
+    ddt(Pe) -= ramp_j_diamag * (2. / 3) * Pe * (Curlb_B * Grad(phi));
   }
 
   // Parallel heat conduction
@@ -3315,14 +3392,14 @@ int Hermes::rhs(BoutReal t) {
 
   if (j_diamag) { // Diamagnetic flow
     // Magnetic drift (curvature) divergence
-    ddt(Pi) -= (5. / 3) * FV::Div_f_v(Pi, Tilim * Curlb_B, pe_bndry_flux);
+    ddt(Pi) -= ramp_j_diamag * (5. / 3) * FV::Div_f_v(Pi, Tilim * Curlb_B, pe_bndry_flux);
 
     // Compression of ExB flow
     // These terms energetically balances diamagnetic term
     // in the vorticity equation
-    ddt(Pi) -= (2. / 3) * Pi * (Curlb_B * Grad(phi));
+    ddt(Pi) -= ramp_j_diamag * (2. / 3) * Pi * (Curlb_B * Grad(phi));
 
-    ddt(Pi) += Pi * Div((Pe + Pi) * Curlb_B);
+    ddt(Pi) += ramp_j_diamag * Pi * Div((Pe + Pi) * Curlb_B);
   }
 
   if (j_par) {
@@ -3586,8 +3663,15 @@ int Hermes::rhs(BoutReal t) {
   ///////////////////////////////////////////////////////////
   // Radial buffer regions for turbulence simulations
 
-  if (radial_buffers) {
-    /// Radial buffer regions
+  if (slab_radial_buffers && radial_buffers) {
+    // No Ti0
+    output << "WARNING: Both tokamak-geometry and slab-geometry radial buffers are set to true ... \
+    defaulting to tokamak geometry \n";
+    slab_radial_buffers = false;
+  }
+
+  if (radial_buffers && !slab_radial_buffers) {
+    /// Radial buffer regions for tokamak geometry - inner and outer boundaries treated differently
 
     // Calculate flux Z averages.
     // This is used for both inner and outer boundaries
@@ -3720,6 +3804,141 @@ int Hermes::rhs(BoutReal t) {
             // Radial fluxes
             
             BoutReal f = D * (Vort(i + 1, j, k) - Vort(i, j, k));
+            ddt(Vort)(i, j, k) += f * x_factor;
+            ddt(Vort)(i + 1, j, k) -= f * xp_factor;
+          }
+        }
+      }
+    }
+  }
+
+  if (slab_radial_buffers && !radial_buffers) {
+    /// radial buffer regions for slab geometry sims - same on both inner and outer boundaries
+
+    // Calculate flux sZ averages
+    Field2D PeDC = DC(Pe);
+    Field2D PiDC = DC(Pi);
+    Field2D NeDC = DC(Ne);
+    Field2D VortDC = DC(Vort);
+
+    if ((mesh->getGlobalXIndex(mesh->xstart) - mesh->xstart) < radial_inner_width) {
+      // This processor contains points inside the inner radial boundary
+
+      int imax = mesh->xstart + radial_inner_width - 1 -
+                 (mesh->getGlobalXIndex(mesh->xstart) - mesh->xstart);
+      if (imax > mesh->xend) {
+        imax = mesh->xend;
+      }
+
+      int imin = mesh->xstart;
+      if (!mesh->firstX()) {
+        --imin; // Calculate in guard cells, for radial fluxes
+      }
+      int ncz = mesh->LocalNz;
+
+      for (int i = imin; i <= imax; ++i) {
+        // position inside the boundary (0 = on boundary, 0.5 = first cell)
+        BoutReal pos =
+            static_cast<BoutReal>(mesh->getGlobalXIndex(i) - mesh->xstart) + 0.5;
+
+        // Diffusion coefficient which increases towards the boundary
+        BoutReal D = radial_buffer_D * (1. - pos / radial_inner_width);
+
+        for (int j = mesh->ystart; j <= mesh->yend; ++j) {
+          BoutReal dx = coord->dx(i, j);
+          BoutReal dx_xp = coord->dx(i + 1, j);
+          BoutReal J = coord->J(i, j);
+          BoutReal J_xp = coord->J(i + 1, j);
+
+          // Calculate metric factors for radial fluxes
+          BoutReal rad_flux_factor = 0.25 * (J + J_xp) * (dx + dx_xp);
+          BoutReal x_factor = rad_flux_factor / (J * dx);
+          BoutReal xp_factor = rad_flux_factor / (J_xp * dx_xp);
+
+          for (int k = 0; k < ncz; ++k) {
+            // Relax towards constant value on flux surface
+            ddt(Pe)(i, j, k) -= D * (Pe(i, j, k) - PeDC(i, j));
+            ddt(Pi)(i, j, k) -= D * (Pi(i, j, k) - PiDC(i, j));
+            ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeDC(i, j));
+            ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortDC(i, j));
+            ddt(NVi)(i, j, k) -= D * NVi(i, j, k);
+            
+            // Radial fluxes
+            BoutReal f = D * (Ne(i + 1, j, k) - Ne(i, j, k));
+            ddt(Ne)(i, j, k) += f * x_factor;
+            ddt(Ne)(i + 1, j, k) -= f * xp_factor;
+
+            f = D * (Pe(i + 1, j, k) - Pe(i, j, k));
+            ddt(Pe)(i, j, k) += f * x_factor;
+            ddt(Pe)(i + 1, j, k) -= f * xp_factor;
+
+            f = D * (Pi(i + 1, j, k) - Pi(i, j, k));
+            ddt(Pi)(i, j, k) += f * x_factor;
+            ddt(Pi)(i + 1, j, k) -= f * xp_factor;
+
+            f = D * (Vort(i + 1, j, k) - Vort(i, j, k));
+            ddt(Vort)(i, j, k) += f * x_factor;
+            ddt(Vort)(i + 1, j, k) -= f * xp_factor;
+          }
+        }
+      }
+    }
+    // Number of points in outer guard cells
+    int nguard = mesh->LocalNx - mesh->xend - 1;
+
+    if (mesh->GlobalNx - nguard - mesh->getGlobalXIndex(mesh->xend) <=
+        radial_outer_width) {
+
+      // Outer boundary
+      int imin =
+          mesh->GlobalNx - nguard - radial_outer_width - mesh->getGlobalXIndex(0);
+      if (imin < mesh->xstart) {
+        imin = mesh->xstart;
+      }
+      int ncz = mesh->LocalNz;
+      for (int i = imin; i <= mesh->xend; ++i) {
+
+        // position inside the boundary
+        BoutReal pos =
+            static_cast<BoutReal>(mesh->GlobalNx - nguard - mesh->getGlobalXIndex(i)) -
+            0.5;
+
+        // Diffusion coefficient which increases towards the boundary
+        BoutReal D = radial_buffer_D * (1. - pos / radial_outer_width);
+
+        for (int j = mesh->ystart; j <= mesh->yend; ++j) {
+          BoutReal dx = coord->dx(i, j);
+          BoutReal dx_xp = coord->dx(i + 1, j);
+          BoutReal J = coord->J(i, j);
+          BoutReal J_xp = coord->J(i + 1, j);
+
+          // Calculate metric factors for radial fluxes
+          BoutReal rad_flux_factor = 0.25 * (J + J_xp) * (dx + dx_xp);
+          BoutReal x_factor = rad_flux_factor / (J * dx);
+          BoutReal xp_factor = rad_flux_factor / (J_xp * dx_xp);
+
+          for (int k = 0; k < ncz; ++k) {
+            ddt(Pe)(i, j, k) -= D * (Pe(i, j, k) - PeDC(i, j));
+            ddt(Pi)(i, j, k) -= D * (Pi(i, j, k) - PiDC(i, j));
+            ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeDC(i, j));
+            ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortDC(i, j));
+            ddt(NVi)(i, j, k) -= D * NVi(i, j, k);
+            // ddt(Vort)(i,j,k) -= D*Vort(i,j,k);
+
+            // Radial fluxes
+            BoutReal f = D * (Ne(i + 1, j, k) - Ne(i, j, k));
+            ddt(Ne)(i, j, k) += f * x_factor;
+            ddt(Ne)(i + 1, j, k) -= f * xp_factor;
+
+            f = D * (Pe(i + 1, j, k) - Pe(i, j, k));
+            ddt(Pe)(i, j, k) += f * x_factor;
+            ddt(Pe)(i + 1, j, k) -= f * xp_factor;
+
+            f = D * (Pi(i + 1, j, k) - Pi(i, j, k));
+            ddt(Pi)(i, j, k) += f * x_factor;
+            ddt(Pi)(i + 1, j, k) -= f * xp_factor;
+
+            f = D * (Vort(i + 1, j, k) - Vort(i, j, k));
             ddt(Vort)(i, j, k) += f * x_factor;
             ddt(Vort)(i + 1, j, k) -= f * xp_factor;
           }

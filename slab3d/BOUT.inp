@@ -1,6 +1,6 @@
 
-NOUT = 50
-TIMESTEP = 10
+NOUT = 100
+TIMESTEP = 50
 
 TwistShift = false  # use twist-shift condition?
 ballooning = true
@@ -14,7 +14,7 @@ init_missing=true
 
 [mesh]
 
-nx = 64   # Radial resolution including 4 guard cells
+nx = 260   # Radial resolution including 4 guard cells
 ny = 16   # Parallel direction
 nz = 64   # number of points in toroidal direction
 

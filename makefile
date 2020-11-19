@@ -1,6 +1,8 @@
 
 BOUT_TOP	= ../..
 
+BOUT_GIT_COMMIT:=$(shell git --git-dir=$(BOUT_TOP)/.git rev-parse --short HEAD >> BOUT_commit)
+
 TARGET = hermes-2
 
 DIRS = atomicpp

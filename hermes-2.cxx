@@ -259,7 +259,8 @@ int Hermes::init(bool restarting) {
   j_par = optsc["j_par"]
               .doc("Parallel current:    Vort <-> Psi")
               .withDefault<bool>(true);
-  
+
+  OPTION(optsc, j_pol_terms, false);
   OPTION(optsc, parallel_flow, true);
   OPTION(optsc, parallel_flow_p_term, parallel_flow);
   OPTION(optsc, pe_par, true);
@@ -2543,14 +2544,15 @@ int Hermes::rhs(BoutReal t) {
         0.49 * (qipar / Pilim) *
             (2.27 * Grad_par(log(Tilim)) - Grad_par(log(Pilim))) +
         0.75 * (0.2 * SQ(qipar) - 0.085 * qisq) / (Pilim * Tilim);
-    
+
     // Parallel part
     Pi_cipar = -0.96 * Pi * tau_i *
                (2. * Grad_par(Vi) + Vi * Grad_par(log(coord->Bxy)));
     // Could also be written as:
     // Pi_cipar = -
     // 0.96*Pi*tau_i*2.*Grad_par(sqrt(coord->Bxy)*Vi)/sqrt(coord->Bxy);
-    
+
+
     if (mesh->firstX()) {
       // First cells in X subject to boundary effects.
       for(int i=mesh->xstart; (i <= mesh->xend) && (i < 4); i++) {
@@ -2768,6 +2770,11 @@ int Hermes::rhs(BoutReal t) {
       mesh->communicate(vEdotGradPi, DelpPhi_2B2);
 
       ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
+
+      if (j_pol_terms){
+	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi + Pi, vort_bndry_flux,
+					   poloidal_flows);
+      }
 
     } else {
       // When the Boussinesq approximation is not made,

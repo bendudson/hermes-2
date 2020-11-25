@@ -899,6 +899,11 @@ int Hermes::init(bool restarting) {
 
       if (!restarting) {
         // Start by setting to the sheath current = 0 boundary value
+
+        Field3D Nelim = floor(Ne, 1e-5);
+        Telim = floor(Pe / Nelim, 0.1 / Tnorm);
+        Tilim = floor(Pi / Nelim, 0.1 / Tnorm);
+
         phi.setBoundaryTo(DC(
             (log(0.5 * sqrt(mi_me / PI)) + log(sqrt(Telim / (Telim + Tilim)))) * Telim));
       }

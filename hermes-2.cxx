@@ -940,8 +940,10 @@ int Hermes::init(bool restarting) {
 
     SAVE_REPEAT(tau_e, tau_i);
 
-    SAVE_REPEAT(kappa_epar); // Parallel electron heat conductivity
-    SAVE_REPEAT(kappa_ipar); // Parallel ion heat conductivity
+    if (thermal_conduction || sinks) {
+      SAVE_REPEAT(kappa_epar); // Parallel electron heat conductivity
+      SAVE_REPEAT(kappa_ipar); // Parallel ion heat conductivity
+    }
 
     if (resistivity) {
       SAVE_REPEAT(nu); // Parallel resistivity

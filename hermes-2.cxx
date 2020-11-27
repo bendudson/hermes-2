@@ -346,6 +346,9 @@ int Hermes::init(bool restarting) {
   OPTION(optsc, floor_num_cs, -1.0);
   OPTION(optsc, vepsi_dissipation, false);
   OPTION(optsc, vort_dissipation, false);
+  phi_dissipation = optsc["phi_dissipation"]
+    .doc("Add a dissipation term to vorticity, depending on reconstruction of potential?")
+    .withDefault<bool>(false);
 
   OPTION(optsc, ne_hyper_z, -1.0);
   OPTION(optsc, pe_hyper_z, -1.0);
@@ -2851,6 +2854,12 @@ int Hermes::rhs(BoutReal t) {
       }
 
       ddt(Vort) -= FV::Div_par(Vort, 0.0, max_speed);
+    }
+
+    if (phi_dissipation) {
+      // Adds dissipation term like in other equations, but depending on gradient of potential
+      // Note: Doesn't seem to need faster than sound speed
+      ddt(Vort) -= FV::Div_par(-phi, 0.0, sound_speed);
     }
   }
 

@@ -255,8 +255,13 @@ int Hermes::init(bool restarting) {
   j_diamag = optsc["j_diamag"]
                  .doc("Diamagnetic current: Vort <-> Pe")
                  .withDefault<bool>(true);
-  
-  j_diamag_scale_generator = FieldFactory::get()->parse("hermes:j_diamag_scale", Options::getRoot());
+ 
+  if (optsc["j_diamag_scale"].isSet()) { 
+    j_diamag_scale_generator = FieldFactory::get()->parse("hermes:j_diamag_scale", Options::getRoot());
+    SAVE_REPEAT(j_diamag_scale);
+  } else {
+    j_diamag_scale_generator = FieldFactory::get()->parse("1");
+  }
   
   j_par = optsc["j_par"]
               .doc("Parallel current:    Vort <-> Psi")
@@ -979,7 +984,7 @@ int Hermes::rhs(BoutReal t) {
   }
 
   // Factor scaling the diamagnetic current
-  BoutReal j_diamag_scale = j_diamag_scale_generator->generate(0, 0, 0, t);
+  j_diamag_scale = j_diamag_scale_generator->generate(0, 0, 0, t);
 
   // Communicate evolving variables
   // Note: Parallel slices are not calculated because parallel derivatives

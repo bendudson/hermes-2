@@ -104,6 +104,7 @@ private:
   
   bool j_diamag;    // Diamagnetic current: Vort <-> Pe
   FieldGeneratorPtr  j_diamag_scale_generator; // Time-varying diamagnetic current scaling
+  BoutReal j_diamag_scale;    // Diamagnetic current scaling factor.
   bool j_par;       // Parallel current:    Vort <-> Psi
   bool parallel_flow;
   bool parallel_flow_p_term; // Vi advection terms in Pe, Pi

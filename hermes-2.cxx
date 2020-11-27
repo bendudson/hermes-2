@@ -791,53 +791,89 @@ int Hermes::init(bool restarting) {
   // Read curvature components
   TRACE("Reading curvature");
 
-  try {
-    Curlb_B.covariant = false; // Contravariant
-    mesh->get(Curlb_B, "bxcv");
-  
-  } catch (BoutException &e) {
+  Curlb_B.covariant = false; // Contravariant curvature vector Curl(b / B)
+
+  clean_curvature = optsc["clean_curvature"].doc("Evolve curvature to clean divergence?").withDefault<bool>(false);
+  if (clean_curvature) {
+    // Note: This is called before setting the initial value of Curlb_B
+    //       so that the initial conditions are overwritten
+    SOLVE_FOR(Curlb_B);
+    SAVE_REPEAT(Div_Curlb_B); // Monitor divergence
+  } else {
+    SAVE_ONCE(Curlb_B);
+    SAVE_ONCE(Div_Curlb_B);
+  }
+
+  if (optsc["use_mesh_curvature"].withDefault<bool>(true)) {
     try {
-      // May be 2D, reading as 3D
-      Vector2D curv2d;
-      curv2d.covariant = false;
-      mesh->get(curv2d, "bxcv");
-      Curlb_B = curv2d;
+      mesh->get(Curlb_B, "bxcv");
+  
     } catch (BoutException &e) {
-      if (j_diamag) {
-        // Need curvature
-        throw;
-      } else {
-        output_warn.write("No curvature vector in input grid");
-        Curlb_B = 0.0;
+      try {
+        // May be 2D, reading as 3D
+        Vector2D curv2d;
+        curv2d.covariant = false;
+        mesh->get(curv2d, "bxcv");
+        Curlb_B = curv2d;
+      } catch (BoutException &e) {
+        if (j_diamag) {
+          // Need curvature
+          throw;
+        } else {
+          output_warn.write("No curvature vector in input grid");
+          Curlb_B = 0.0;
+        }
       }
     }
-  }
-  
-  if (Options::root()["mesh"]["paralleltransform"].as<std::string>() == "shifted") {
-    // Check if the gridfile was created for "shiftedmetric" or for "identity" parallel
-    // transform
-    std::string gridfile_parallel_transform;
-    if (mesh->get(gridfile_parallel_transform, "parallel_transform")) {
-      // Did not find in gridfile, indicates older gridfile, which generated output for
-      // field-aligned coordinates, i.e. "identity" parallel transform
-      gridfile_parallel_transform = "identity";
+
+    if (Options::root()["mesh"]["paralleltransform"].as<std::string>() == "shifted") {
+      // Check if the gridfile was created for "shiftedmetric" or for "identity" parallel
+      // transform
+      std::string gridfile_parallel_transform;
+      if (mesh->get(gridfile_parallel_transform, "parallel_transform")) {
+        // Did not find in gridfile, indicates older gridfile, which generated output for
+        // field-aligned coordinates, i.e. "identity" parallel transform
+        gridfile_parallel_transform = "identity";
+      }
+      if (gridfile_parallel_transform == "identity") {
+        Field2D I;
+        mesh->get(I, "sinty");
+        Curlb_B.z += I * Curlb_B.x;
+      } else if ((gridfile_parallel_transform != "shifted") and
+                 (gridfile_parallel_transform != "shiftedmetric")){
+        throw BoutException("Gridfile generated for unsupported parallel transform %s",
+                            gridfile_parallel_transform.c_str());
+      }
     }
-    if (gridfile_parallel_transform == "identity") {
-      Field2D I;
-      mesh->get(I, "sinty");
-      Curlb_B.z += I * Curlb_B.x;
-    } else if ((gridfile_parallel_transform != "shifted") and
-               (gridfile_parallel_transform != "shiftedmetric")){
-      throw BoutException("Gridfile generated for unsupported parallel transform %s",
-                          gridfile_parallel_transform.c_str());
-    }
+
+    // Normalise input curvature
+
+    Curlb_B.x /= Bnorm;
+    Curlb_B.y *= rho_s0 * rho_s0;
+    Curlb_B.z *= rho_s0 * rho_s0;
+
+    Curlb_B *= 2. / coord->Bxy;
+
+  } else {
+    // Not reading from input, so calculate from curl(b/B)
+
+    Vector2D bunit; // Unit b vector
+    bunit.covariant = false;
+    bunit.x = 0;
+    bunit.y = 1./(coord->J * coord->Bxy);
+    bunit.z = 0;
+
+    // Take curl of b/B
+    Curlb_B = Curl(bunit / coord->Bxy);
+    Curlb_B.x.applyBoundary("neumann");
+    Curlb_B.y.applyBoundary("neumann");
+    Curlb_B.z.applyBoundary("neumann");
+    Curlb_B.toContravariant();
   }
 
-  Curlb_B.x /= Bnorm;
-  Curlb_B.y *= rho_s0 * rho_s0;
-  Curlb_B.z *= rho_s0 * rho_s0;
-
-  Curlb_B *= 2. / coord->Bxy;
+  // Monitor the divergence of Curlb_B
+  Div_Curlb_B = Div(Curlb_B);
+  Div_Curlb_B.applyBoundary("dirichlet");
 
   //////////////////////////////////////////////////////////////
   // Electromagnetic fields
@@ -982,6 +1018,17 @@ int Hermes::rhs(BoutReal t) {
     VePsi = 0.0;
     NVi = 0.0;
     sheath_model = 0;
+  }
+
+  if (clean_curvature) {
+    // Evolve curvature to clean divergence. This is one method
+    // commonly used in MHD codes to restore Div(B) = 0
+
+    Div_Curlb_B = Div(Curlb_B);
+    Div_Curlb_B.applyBoundary("dirichlet");
+    mesh->communicate(Div_Curlb_B);
+
+    ddt(Curlb_B) = Grad(Div_Curlb_B); // Diffusive divergence cleaning
   }
 
   // Communicate evolving variables

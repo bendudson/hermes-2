@@ -220,7 +220,9 @@ private:
   
   // Curvature, Grad-B drift
   Vector3D Curlb_B; // Curl(b/B)
-  
+  Field3D Div_Curlb_B; // Divergence of Curl(b/B). Should be small
+  bool clean_curvature; // Evolve curvature to clean divergence
+
   // Perturbed parallel gradient operators
   const Field3D Grad_parP(const Field3D &f);
   const Field3D Div_parP(const Field3D &f);

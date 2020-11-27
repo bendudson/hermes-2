@@ -3,13 +3,9 @@ NOUT = 100
 TIMESTEP = 1000
 
 MZ = 1     # number of points in z direction (2^n + 1)
-
 ZPERIOD = 1  # Number of times domain repeats in toroidal angle
 
 grid = tokamak-example.nc
-
-[restart]
-init_missing = true  # Set missing variables to 0 if missing in restarts
 
 [mesh]
 paralleltransform = shifted
@@ -51,34 +47,9 @@ ATOL = 1.0e-10  # absolute tolerance
 RTOL = 1.0e-5   # relative tolerance
 mxstep = 1000000  # Maximum internal steps per output
 
-##################################################
-# Electrostatic potential solver
 
-[phiSolver]
-inner_boundary_flags = 0   # Zero-gradient inner boundary
-outer_boundary_flags = 16  # INVERT_SET, setting outer boundary
-
-[laplacexy]  # 2D solver in X-Y
-pctype = hypre    # Preconditioner
-
-atol = 1e-12
-rtol = 1e-8
-
-# Note: These boundary flags should be consistent with phiSolver
-core_bndry_dirichlet = false
-pf_bndry_dirichlet = true
-y_bndry_dirichlet = false
-
-include_y_derivs = true  # Include the y components in the inversion
-
-[aparSolver]
-inner_boundary_flags = 0
-outer_boundary_flags = 0
-
-all_terms = true
-nonuniform=true
-
-# general settings for the model
+###################################################
+# Model settings
 
 [Hermes]
 
@@ -101,31 +72,17 @@ kappa_limit_alpha = 0.2 # SOLPS style heat flux limiter
 eta_limit_alpha   = 0.5 # SOLPS style viscosity limiter
 
 #######################
-# Electric field and Ohm's law
-electromagnetic = true  # Electromagnetic? Otherwise electrostatic
-FiniteElMass    = true  # Finite electron mass?
-
-# Electrostatic potential
-split_n0 = false  # Solve n=0 electrostatic potential separately?
-split_n0_psi = false  # Solve n=0 Apar component separately?
+# Terms included in the model
 
 # NOTE: all currents switched off for fluid run
 j_diamag = false    # Diamagnetic current
 j_par = false       # Parallel current
 
-pe_par         = true  # Parallel pressure gradient: Pe <-> Psi
-resistivity    = true  # Resistivity: Psi -> Pe
-thermal_flux   = true
-thermal_force  = true
-electron_viscosity = false
-ion_viscosity = false
-ion_viscosity_par = true  # Parallel diffusion of ion momentum
-thermal_conduction = true
-poloidal_flows = false   # Include ExB flows in the X-Y plane?
+pe_par         = true # Parallel pressure gradient terms
+ion_viscosity = true  # Parallel diffusion of ion momentum
+thermal_conduction = true   # Parallel heat conduction
 ion_velocity = true      # Evolve ion parallel velocity?
-boussinesq = true        # Use Boussinesq approximation
 ion_neutral = false      # Include ion-neutral collisions in tau_i?
-neutral_friction = false  # Friction between plasma and neutrals in vorticity equation
 
 frecycle = 0.99          # Neutral recycling fraction at targets
 
@@ -139,10 +96,10 @@ anomalous_D = 1      # Anomalous density diffusion [m^2/s]
 anomalous_chi = 0.5  # Anomalous thermal diffusion [m^2/s]
 anomalous_nu = 0.01  # Anomalous viscosity [m^2/s]
 
+#######################
 # Radial boundary fluxes
-ne_bndry_flux = true
-pe_bndry_flux = true
-vort_bndry_flux = false
+ne_bndry_flux = true   # Allow radial flows of particles through boundary
+pe_bndry_flux = true   # Allow radial flows of energy through boundary
 
 #######################
 # Plasma sheath
@@ -162,12 +119,15 @@ source_p = 1e-2       # Rate based on current error (1/timescale)
 source_i = 1e-6       # Integral of error (1/timescale^2)
 source_vary_g11 = true  # Vary source in poloidal angle to better match radial transport
 
+#######################
 # Normalisation factors
 Nnorm = 1e20
 Tnorm = 100
 Bnorm = 1
 AA = 2  # Atomic mass. 1 = Hydrogen, 2 = Deuterium
 
+#######################
+# Neutrals
 [neutral]
 type = mixed
 viscosity = 1  # Dynamic viscosity
@@ -187,37 +147,21 @@ bndry_xout = neumann_o2
 
 [Ne] # Electron density
 scale = 1
-function = 0.0
+function = 0.0  # Starting value, added to grid profiles
 
-source = 0.0 
-
-[Vort]
-function = 0
-
-[VePsi] # Ve + 0.5*beta_e*mi_me*psi
-bndry_core = zerolaplace
-bndry_pf   = dirichlet_o2
-bndry_xout = dirichlet_o2
+source = 0.0  # Starting particle source
 
 [Pe]  # Electron pressure
 scale = 1
-function = 0.0
+function = 0.0  # Starting value, added to grid profiles
 
 source = 1e4 * exp(-(32*x^2)) # Source of thermal energy into electrons
 
 [Pi]
 scale = 1
-function = 0.0
+function = 0.0  # Starting value, added to grid profiles
 
 source = 1e4 * exp(-(32*x^2)) # Source of thermal energy into ions
-
-[Ve]
-
-[phi]
-# Radial boundaries determined by Laplacian inversion
-bndry_all = none
-bndry_yup = free_o3
-bndry_ydown = free_o3
 
 [Nn]   # Neutral density
 
@@ -226,7 +170,7 @@ function = 1
 bndry_xin = dirichlet_o2(1e-2)
 bndry_xout = dirichlet_o2(1e-2)
 
-[Vn]
+[Vn]   # Neutral parallel velocity
 
 scale = 0
 function = 0

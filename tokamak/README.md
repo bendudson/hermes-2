@@ -21,3 +21,9 @@ diffusion, but no currents or drifts.
 This will run for approx. 30 minutes, for a simulation time of 1e5/wci,
 sufficient to reach steady state.
 
+Then turn on currents and diamagnetic drift. Copy the `BOUT.restart.*` files
+from `1-no-currents` into `2-currents` and restart:
+
+    $ cp 1-no-currents/BOUT.restart.* 2-currents/
+    $ mpirun -np 16 ./hermes-2 -d 2-currents restart
+

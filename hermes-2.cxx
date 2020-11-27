@@ -583,6 +583,8 @@ int Hermes::init(bool restarting) {
                         .doc("Vary pressure source in time to match core profiles").withDefault(adapt_source);
   adapt_source_n = optsc["adapt_source_n"]
                         .doc("Vary density source in time to match core profiles").withDefault(adapt_source);
+  sources_positive = optsc["sources_positive"].doc("Ensure that sources are always positive").withDefault<bool>(true);
+
   if (adapt_source_p) {
     // Adaptive pressure sources to match profiles
 
@@ -2693,7 +2695,7 @@ int Hermes::rhs(BoutReal t) {
           Sn(x, y) -= source_p * NeErr(x, y);
           ddt(Sn)(x, y) = -source_i * NeErr(x, y);
 
-          if (Sn(x, y) < 0.0) {
+          if (sources_positive && Sn(x, y) < 0.0) {
             Sn(x, y) = 0.0;
             if (ddt(Sn)(x, y) < 0.0)
               ddt(Sn)(x, y) = 0.0;
@@ -3259,7 +3261,7 @@ int Hermes::rhs(BoutReal t) {
           Spe(x, y) -= source_p * PeErr(x, y);
           ddt(Spe)(x, y) = -source_i * PeErr(x, y);
 
-          if (Spe(x, y) < 0.0) {
+          if (sources_positive && Spe(x, y) < 0.0) {
             Spe(x, y) = 0.0;
             if (ddt(Spe)(x, y) < 0.0)
               ddt(Spe)(x, y) = 0.0;
@@ -3546,7 +3548,7 @@ int Hermes::rhs(BoutReal t) {
           Spi(x, y) -= source_p * PiErr(x, y);
           ddt(Spi)(x, y) = -source_i * PiErr(x, y);
 
-          if (Spi(x, y) < 0.0) {
+          if (sources_positive && Spi(x, y) < 0.0) {
             Spi(x, y) = 0.0;
             if (ddt(Spi)(x, y) < 0.0)
               ddt(Spi)(x, y) = 0.0;

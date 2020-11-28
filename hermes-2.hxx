@@ -103,6 +103,8 @@ private:
   bool FiniteElMass;    // Finite Electron Mass
   
   bool j_diamag;    // Diamagnetic current: Vort <-> Pe
+  FieldGeneratorPtr  j_diamag_scale_generator; // Time-varying diamagnetic current scaling
+  BoutReal j_diamag_scale;    // Diamagnetic current scaling factor.
   bool j_par;       // Parallel current:    Vort <-> Psi
   bool j_pol_terms; // Extra terms in Vort
   bool parallel_flow;

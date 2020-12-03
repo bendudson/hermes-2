@@ -135,8 +135,6 @@ private:
   bool ion_velocity;  // Include Vi terms
 
   bool phi3d;         // Use a 3D solver for phi
-  
-  bool staggered;     // Use staggered differencing along B
 
   bool boussinesq;     // Use a fixed density (Nnorm) in the vorticity equation
 

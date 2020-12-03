@@ -318,8 +318,6 @@ int Hermes::init(bool restarting) {
                      .doc("A fixed ion-neutral collision rate, normalised to ion cyclotron frequency.")
                      .withDefault(0.0);
 
-  OPTION(optsc, staggered, false);
-
   OPTION(optsc, boussinesq, false);
 
   OPTION(optsc, sinks, false);

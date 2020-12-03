@@ -107,8 +107,7 @@ private:
   
   bool j_diamag;    // Diamagnetic current: Vort <-> Pe
   bool j_par;       // Parallel current:    Vort <-> Psi
-  bool j_pol;       // Polarisation current
-  bool j_pol_extra_terms; // Polarization current, extra terms (Vort)
+  bool j_pol_pi;       // Polarisation current with explicit Pi dependence
   bool parallel_flow;
   bool parallel_flow_p_term; // Vi advection terms in Pe, Pi
   bool pe_par;      // Parallel pressure gradient: Pe <-> Psi

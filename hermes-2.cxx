@@ -318,11 +318,10 @@ int Hermes::init(bool restarting) {
               .doc("Parallel current:    Vort <-> Psi")
               .withDefault<bool>(true);
 
-  j_pol = optsc["j_pol"]
-              .doc("Polarisation current")
+  j_pol_pi = optsc["j_pol_pi"]
+              .doc("Polarisation current with explicit Pi dependence")
               .withDefault<bool>(true);
 
-  OPTION(optsc, j_pol_extra_terms, true);
   OPTION(optsc, parallel_flow, true);
   OPTION(optsc, parallel_flow_p_term, parallel_flow);
   OPTION(optsc, pe_par, true);
@@ -988,6 +987,11 @@ int Hermes::init(bool restarting) {
 
 	if (!restarting) {
 	  // Start by setting to the sheath current = 0 boundary value
+
+	  Field3D Nelim = floor(Ne, 1e-5);
+	  Telim = floor(Pe / Nelim, 0.1 / Tnorm);
+	  Tilim = floor(Pi / Nelim, 0.1 / Tnorm);
+
 	  phi.setBoundaryTo(DC(
 			       (log(0.5 * sqrt(mi_me / PI)) + log(sqrt(Telim / (Telim + Tilim)))) * Telim));
 	}
@@ -2187,7 +2191,7 @@ int Hermes::rhs(BoutReal t) {
     }
   }
 
-  nu.applyBoundary(t);
+  if(currents){ nu.applyBoundary(t); }
 
   if (ion_viscosity) {
     ///////////////////////////////////////////////////////////
@@ -2516,47 +2520,39 @@ int Hermes::rhs(BoutReal t) {
 	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(0.5 * Vort, phi, vort_bndry_flux,
 					   poloidal_flows, false);
       }else{//fci used
-	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(0.5 * Vort, phi, vort_bndry_flux,
-					   poloidal_flows, false) * bracket_factor;
-      }
+	if (j_pol_pi){
+	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(0.5 * Vort, phi, vort_bndry_flux,
+					     poloidal_flows, false) * bracket_factor;
+	  // V_ExB dot Grad(Pi)
+	  Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA) * bracket_factor;
+	  vEdotGradPi.applyBoundary("free_o2");
+	  // delp2(phi) term
+	  Field3D DelpPhi_2B2 = 0.5 * Delp2(phi) / SQ(Bxyz);
+	  DelpPhi_2B2.applyBoundary("free_o2");
+	  
+	  mesh->communicate(vEdotGradPi, DelpPhi_2B2);
+	  
+	  if(!fci_transform){
+	    ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
+	  }else{
+	    Field3D inv_2sqb = 0.5 / SQ(Bxyz);
+	    mesh->communicate(inv_2sqb);
+	    ddt(Vort) -= FV::Div_a_Laplace_perp(inv_2sqb, vEdotGradPi);
+	  }
 
-      if (j_pol) {
-	// V_ExB dot Grad(Pi)
-	Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA) * bracket_factor;
-	vEdotGradPi.applyBoundary("free_o2");
-	// delp2(phi) term
-	Field3D DelpPhi_2B2 = 0.5 * Delp2(phi) / SQ(Bxyz);
-	DelpPhi_2B2.applyBoundary("free_o2");
-
-	mesh->communicate(vEdotGradPi, DelpPhi_2B2);
-
-	if(!fci_transform){
-	  ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
-	}else{
-	  Field3D inv_2sqb = 0.5 / SQ(Bxyz);
-	  mesh->communicate(inv_2sqb);
-	  ddt(Vort) -= FV::Div_a_Laplace_perp(inv_2sqb, vEdotGradPi);
-	}
-
-	if (j_pol_extra_terms) {
 	  // delp2 phi v_ExB term
-	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi+Pi, vort_bndry_flux,
+	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi + Pi, vort_bndry_flux,
 	  				     poloidal_flows) * bracket_factor;
+	  
+	}else{
+	  // use simplified polarization term from i.e. GBS
+	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(Vort, phi, vort_bndry_flux,
+					     poloidal_flows, false) * bracket_factor;
 
-
-	  // delp2 phi v_di term
-	  // ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, Pi, vort_bndry_flux,
-	  // 				     poloidal_flows) * bracket_factor;
-
-
-	  // c = Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, Pi, vort_bndry_flux,
-	  // 				     poloidal_flows) * bracket_factor;
-
-	  // Field3D delpphi_2b2Pi = mul_all(DelpPhi_2B2, Pi);
-	  // mesh->communicate(delpphi_2b2Pi);
-	  // ddt(Vort) -= fci_curvature(delpphi_2b2Pi);
 	}
       }
+
+
       
     } else {
       // When the Boussinesq approximation is not made,
@@ -2897,7 +2893,6 @@ int Hermes::rhs(BoutReal t) {
       if(fci_transform){
 	// ddt(Pe) = bracket(Pe, phi, BRACKET_ARAKAWA) * bracket_factor;
 	ddt(Pe) = -Div_n_bxGrad_f_B_XPPM(Pe, phi, pe_bndry_flux, poloidal_flows, true) * bracket_factor;
-
       }else{
 	// Divergence of heat flux due to ExB advection
 	ddt(Pe) = -Div_n_bxGrad_f_B_XPPM(Pe, phi, pe_bndry_flux, poloidal_flows, true);

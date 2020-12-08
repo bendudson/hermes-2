@@ -408,6 +408,10 @@ int Hermes::init(bool restarting) {
   OPTION(optsc, vepsi_dissipation, false);
   OPTION(optsc, vort_dissipation, false);
 
+  phi_dissipation = optsc["phi_dissipation"]
+    .doc("Add a dissipation term to vorticity, depending on reconstruction of potential?")
+    .withDefault<bool>(false);
+
   ne_num_diff = optsc["ne_num_diff"]
                     .doc("Numerical Ne diffusion in X-Z plane. < 0 => off.")
                     .withDefault(-1.0);
@@ -2630,6 +2634,11 @@ int Hermes::rhs(BoutReal t) {
       }else{
 	ddt(Vort) += SQ(coord->dy)*D2DY2(Vort);
       }
+    }
+    if (phi_dissipation) {
+      // Adds dissipation term like in other equations, but depending on gradient of potential
+      // Note: Doesn't seem to need faster than sound speed
+      ddt(Vort) -= SQ(coord->dy)*D2DY2(phi);
     }
   }
 

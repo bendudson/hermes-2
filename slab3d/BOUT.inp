@@ -1,6 +1,6 @@
 
-NOUT = 50
-TIMESTEP = 10
+NOUT = 100
+TIMESTEP = 100
 
 ShiftWithoutTwist=true
 
@@ -74,11 +74,14 @@ ATOL = 1.0e-10  # absolute tolerance
 RTOL = 1.0e-5   # relative tolerance
 mxstep = 1000000  # Maximum internal steps per output
 
+cvode_max_order = 2
+cvode_stability_limit_detection = true
+
 ##################################################
 # Electrostatic potential solver
 
 [phiSolver]
-inner_boundary_flags = 0   # Zero-gradient inner boundary
+inner_boundary_flags = 16   # Zero-gradient inner boundary
 outer_boundary_flags = 16  # INVERT_SET, setting outer boundary
 
 [laplacexy]  # 2D solver in X-Y
@@ -120,7 +123,7 @@ phi_dissipation = true    # Parallel dissipation of potential oscillations
 
 radial_buffers = true   # Turn on dissipation close to boundaries
 radial_inner_width = 4  # Number of cells on inner boundary
-radial_outer_width = -1  # Number of cell on outer boundary. < 0 -> no buffer
+radial_outer_width = 4  # Number of cell on outer boundary. < 0 -> no buffer
 radial_buffer_D = 1     # Damping coefficient in boundary
 
 #######################

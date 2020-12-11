@@ -5,8 +5,7 @@
 #
 
 NOUT = 1000     # number of output time-steps
-TIMESTEP = 10  # time between outputs
-
+TIMESTEP = 50  # time between outputs
 
 [restart]
 init_missing = true  # Set missing variables to 0 if missing in restarts
@@ -46,6 +45,10 @@ ixseps1 = -1  # This line and the one below will add y boundaries
 ixseps2 = -1  #
 
 paralleltransform = identity
+
+Ne0 = 1e-3 * exp(-x^2)  # Starting density profile [x10^20 m^-3]
+Te0 = 1     # Starting electron temperature [eV]
+Ti0 = 0.1   # Starting ion temperate [eV]
 
 ##################################################
 # Derivative methods
@@ -87,7 +90,7 @@ cvode_stability_limit_detection = true
 # Electrostatic potential solver
 
 [phiSolver]
-inner_boundary_flags = 16  # INVERT_SET, setting inner boundary
+inner_boundary_flags = 1  # Zero gradient
 outer_boundary_flags = 16  # INVERT_SET, setting outer boundary
 
 [laplacexy]  # 2D solver in X-Y
@@ -111,6 +114,8 @@ outer_boundary_flags = 0
 # Model settings
 
 [Hermes]
+
+ramp_mesh = false
 
 #######################
 # Output variables
@@ -229,8 +234,9 @@ bndry_xin = neumann_o2
 bndry_xout = neumann_o2
 
 [Ne] # Electron density
-function = 1e-3
-source = 1e2*exp(-(x/0.5)^2)   # Particle source
+scale = 1
+function = 1e-3*(mixmode(z) + mixmode(4*z - x))
+source = 4e2*exp(-(x/0.5)^2)   # Particle source
 
 [Vort]
 function = 0
@@ -241,7 +247,7 @@ bndry_xout = dirichlet_o2
 
 [Pe]  # Electron pressure
 function = 1e-3
-source = 1e3*exp(-(x/0.5)^2)   # Power into electrons
+source = 4e3*exp(-(x/0.5)^2)   # Power into electrons
 
 [Pi]  # Ion pressure
 function = 1e-3

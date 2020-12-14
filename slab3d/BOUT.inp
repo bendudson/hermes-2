@@ -1,6 +1,5 @@
-
 NOUT = 200     # number of output time-steps
-TIMESTEP = 10  # time between outputs
+TIMESTEP = 50  # time between outputs
 
 ShiftWithoutTwist=true
 
@@ -121,6 +120,12 @@ vepsi_dissipation = true  # Parallel dissipation on Ve-Vi
 vort_dissipation = false  # Parallel dissipation of vorticity oscillations
 phi_dissipation = true    # Parallel dissipation of potential oscillations
 
+#x_hyper_viscos = 0.1
+z_hyper_viscos = 0.001
+ne_hyper_z = 0.001
+pe_hyper_z = 0.001
+
+
 radial_buffers = true   # Turn on dissipation close to boundaries
 radial_inner_width = 4  # Number of cells on inner boundary
 radial_outer_width = 4  # Number of cell on outer boundary. < 0 -> no buffer
@@ -166,11 +171,11 @@ neutral_friction = false  # Friction between plasma and neutrals in vorticity eq
 
 frecycle = 0.99          # Neutral recycling fraction at targets
 
-carbon_fraction = 0.01   # Fixed fraction carbon impurity. < 0 means none
+carbon_fraction = -1   # Fixed fraction carbon impurity. < 0 means none
 
 #######################
 # Transport coefficients
-classical_diffusion = true  # Collisional diffusion
+classical_diffusion = false  # Collisional diffusion
 
 anomalous_D = -1      # Anomalous density diffusion [m^2/s]
 anomalous_chi = -1  # Anomalous thermal diffusion [m^2/s]

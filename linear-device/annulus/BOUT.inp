@@ -178,7 +178,7 @@ carbon_fraction = -1   # Fixed fraction carbon impurity. < 0 means none
 
 #######################
 # Transport coefficients
-classical_diffusion = true  # Include collisional diffusion?
+classical_diffusion = false  # Include collisional diffusion?
 
 anomalous_D = -1      # Anomalous density diffusion [m^2/s]
 anomalous_chi = -1  # Anomalous thermal diffusion [m^2/s]
@@ -236,7 +236,7 @@ bndry_xout = neumann_o2
 [Ne] # Electron density
 scale = 1
 function = 1e-3*(mixmode(z) + mixmode(4*z - x))
-source = 4e2*exp(-(x/0.5)^2)   # Particle source
+source = 6.7e2*exp(-(x/0.3)^2)   # Particle source
 
 [Vort]
 function = 0
@@ -247,11 +247,11 @@ bndry_xout = dirichlet_o2
 
 [Pe]  # Electron pressure
 function = 1e-3
-source = 4e3*exp(-(x/0.5)^2)   # Power into electrons
+source = 8e3*exp(-(x/0.25)^2)   # Power into electrons
 
 [Pi]  # Ion pressure
 function = 1e-3
-source = 1e1*exp(-(x/0.5)^2)  # Power into ions
+source = 0 # Power into ions
 
 [Ve]
 

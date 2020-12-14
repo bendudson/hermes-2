@@ -11,9 +11,9 @@ The BOUT.inp input files assume that this grid file is in the same
 directory as this README, and is called `tokamak-grid.nc`
 
 Curvature
-~~~~~~~~~
+---------
 
-**Important** The magnetic curvature is used in calculating the drift
+The magnetic curvature is used in calculating the drift
 when diamagnetic current is enabled. To ensure that the flux-surface
 average radial flux is zero when pressure is constant on a flux
 surface, the quantity J * Curl(b/B) must be zero. If this is not the case,

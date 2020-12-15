@@ -278,37 +278,72 @@ int Hermes::init(bool restarting) {
   poloidal_flows = optsc["poloidal_flows"]
                        .doc("Include ExB flows in X-Y plane")
                        .withDefault(true);
-  
-  OPTION(optsc, ion_velocity, true);
 
-  OPTION(optsc, thermal_conduction, true);
-  OPTION(optsc, electron_ion_transfer, true);
+  ion_velocity =
+      optsc["ion_velocity"].doc("Evolve ion parallel velocity?").withDefault<bool>(true);
 
-  OPTION(optsc, neutral_friction, false);
-  OPTION(optsc, frecycle, 0.9);
+  thermal_conduction = optsc["thermal_conduction"]
+                           .doc("Include parallel thermal heat conduction?")
+                           .withDefault<bool>(true);
+
+  electron_ion_transfer =
+      optsc["electron_ion_transfer"]
+          .doc("Include Braginskii heat exchange betwen ions and electrons?")
+          .withDefault<bool>(true);
+
+  neutral_friction = optsc["neutral_friction"]
+                         .doc("Include ion-neutral friction in the vorticity equation?")
+                         .withDefault<bool>(false);
+
+  frecycle = optsc["frecycle"]
+                 .doc("Ion -> neutral recycling fraction at divertor targets")
+                 .withDefault(0.9);
 
   OPTION(optsc, phi3d, false);
 
-  OPTION(optsc, ne_bndry_flux, true);
-  OPTION(optsc, pe_bndry_flux, true);
-  OPTION(optsc, vort_bndry_flux, false);
+  ne_bndry_flux = optsc["ne_bndry_flux"]
+                      .doc("Allow density flows through radial boundaries?")
+                      .withDefault<bool>(true);
+  pe_bndry_flux = optsc["pe_bndry_flux"]
+                      .doc("Allow pressure flows through radial boundaries?")
+                      .withDefault<bool>(true);
+  vort_bndry_flux = optsc["vort_bndry_flux"]
+                        .doc("Allow vorticity (current) flows through radial boundaries?")
+                        .withDefault<bool>(false);
 
-  OPTION(optsc, ramp_mesh, true);
-  OPTION(optsc, ramp_timescale, 1e4);
+  ramp_mesh = optsc["ramp_mesh"]
+                  .doc("When starting new simulation, gradually ramp up density and "
+                       "temperature profiles to the values in the mesh?")
+                  .withDefault<bool>(false);
+  ramp_timescale = optsc["ramp_timescale"]
+                       .doc("Timescale over which the density and temperature profiles "
+                            "are ramped up. [Normalised units]")
+                       .withDefault<BoutReal>(1e4);
 
-  OPTION(optsc, energy_source, false);
+  energy_source = optsc["energy_source"]
+                      .doc("Add energy proportional to density / DC(density)?")
+                      .withDefault<bool>(false);
 
   ion_neutral_rate = optsc["ion_neutral_rate"]
-                     .doc("A fixed ion-neutral collision rate, normalised to ion cyclotron frequency.")
-                     .withDefault(0.0);
+                         .doc("A fixed ion-neutral collision rate, normalised to ion "
+                              "cyclotron frequency.")
+                         .withDefault(0.0);
 
-  OPTION(optsc, staggered, false);
+  boussinesq =
+      optsc["boussinesq"]
+          .doc("Use Boussinesq approximation, constant density in polarisation current")
+          .withDefault<bool>(true);
 
-  OPTION(optsc, boussinesq, false);
-
-  OPTION(optsc, sinks, false);
-  OPTION(optsc, sheath_closure, true);
-  OPTION(optsc, drift_wave, false);
+  // 2D closures
+  sinks = optsc["sinks"]
+              .doc("Include sinks for 2D (X-Z) drift-plane simulations?")
+              .withDefault<bool>(false);
+  sheath_closure = optsc["sheath_closure"]
+                       .doc("Use sheath closure in vorticity? False -> vorticity closure")
+                       .withDefault<bool>(true);
+  drift_wave = optsc["drift_wave"]
+                   .doc("Use drift wave closure, with coefficient alpha_dw?")
+                   .withDefault<bool>(false);
 
   // Cross-field transport
   classical_diffusion = optsc["classical_diffusion"]

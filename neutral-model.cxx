@@ -9,6 +9,7 @@
 #include "mixed.hxx"
 #include "none.hxx"
 #include "recycling.hxx"
+#include "neutral-background.hxx"
 
 using bout::globals::mesh;
 
@@ -32,6 +33,9 @@ NeutralModel *NeutralModel::create(Solver *solver, Mesh *mesh,
   } else if (type == "mixed") {
     // Diffusive in X-Z, fluid in Y. Similar to UEDGE
     return new NeutralMixed(solver, mesh, options);
+  } else if (type == "background") {
+    // Fixed background neutrals
+    return new NeutralBackground(solver, mesh, options);
   }
   throw BoutException("Unrecognised neutral model '%s'", type.c_str());
 }

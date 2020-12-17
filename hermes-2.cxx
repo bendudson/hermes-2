@@ -2089,7 +2089,7 @@ int Hermes::rhs(BoutReal t) {
             Vort(r.ind, jy, jz) = Vort(r.ind, mesh->yend, jz);
 
             // Here zero-gradient Te, heat flux applied later
-            Te(r.ind, jy, jz) = tesheath;
+            Te(r.ind, jy, jz) = Te(r.ind, mesh->yend, jz);
             Ti(r.ind, jy, jz) = Ti(r.ind, mesh->yend, jz);
 
             // Dirichlet conditions

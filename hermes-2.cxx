@@ -3073,7 +3073,7 @@ int Hermes::rhs(BoutReal t) {
 
     // This term energetically balances diamagnetic term
     // in the vorticity equation
-    ddt(Pe) -= j_diamag_scale * (2. / 3) * Pe * (Curlb_B * Grad(phi));
+    ddt(Pe) -= j_diamag_scale * (2. / 3) * floor(Pe, 0.0) * (Curlb_B * Grad(phi));
   }
 
   // Parallel heat conduction
@@ -3214,7 +3214,7 @@ int Hermes::rhs(BoutReal t) {
   if (pe_par_p_term) {
     // This term balances energetically the pressure term
     // in Ohm's law
-    ddt(Pe) -= (2. / 3) * Pelim * Div_par(Ve);
+    ddt(Pe) -= (2. / 3) * floor(Pe, 0.0) * Div_par(Ve);
   }
   if (ramp_mesh && (t < ramp_timescale)) {
     ddt(Pe) += PeTarget / ramp_timescale;

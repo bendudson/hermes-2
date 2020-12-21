@@ -1091,7 +1091,24 @@ int Hermes::rhs(BoutReal t) {
     sound_speed = floor(sound_speed, floor_num_cs);
   }
   sound_speed.applyBoundary("neumann");
-  
+
+  // Maximum wave speed either electron sound speed or Alfven speed
+  Field3D max_speed = Bnorm * coord->Bxy /
+    sqrt(SI::mu0 * AA * SI::Mp * Nnorm * Nelim) /
+    Cs0; // Alfven speed (normalised by Cs0)
+  Field3D elec_sound = sqrt(mi_me) * sound_speed; // Electron sound speed
+  for (auto& i : max_speed.getRegion(RGN_ALL)) {
+    if (elec_sound[i] > max_speed[i]) {
+      max_speed[i] = elec_sound[i];
+    }
+
+    // Limit to 100x reference sound speed or light speed
+    BoutReal lim = BOUTMIN(100., 3e8/Cs0);
+    if (max_speed[i] > lim) {
+      max_speed[i] = lim;
+    }
+  }
+
   //////////////////////////////////////////////////////////////
   // Calculate electrostatic potential phi
   //
@@ -2658,7 +2675,7 @@ int Hermes::rhs(BoutReal t) {
     if (currents) {
       // Parallel wave speed increased to electron sound speed
       // since electrostatic & electromagnetic waves are supported
-      ddt(Ne) -= FV::Div_par(Ne, Ve, sqrt(mi_me) * sound_speed);
+      ddt(Ne) -= FV::Div_par(Ne, Ve, max_speed);
     } else {
       // Parallel wave speed is ion sound speed
       ddt(Ne) -= FV::Div_par(Ne, Ve, sound_speed);
@@ -2846,22 +2863,6 @@ int Hermes::rhs(BoutReal t) {
 
     if (vort_dissipation) {
       // Adds dissipation term like in other equations
-      // Maximum speed either electron sound speed or Alfven speed
-      Field3D max_speed = Bnorm * coord->Bxy /
-                          sqrt(SI::mu0 * AA * SI::Mp * Nnorm * Nelim) /
-                          Cs0; // Alfven speed (normalised by Cs0)
-      Field3D elec_sound = sqrt(mi_me) * sound_speed; // Electron sound speed
-      for (auto& i : max_speed.getRegion(RGN_ALL)) {
-	if (elec_sound[i] > max_speed[i]) {
-	  max_speed[i] = elec_sound[i];
-	}
-
-        // Limit to 100x reference sound speed or light speed
-        BoutReal lim = BOUTMIN(100., 3e8/Cs0);
-        if (max_speed[i] > lim) {
-          max_speed[i] = lim;
-        }
-      }
 
       ddt(Vort) -= FV::Div_par(Vort, 0.0, max_speed);
     }
@@ -2944,24 +2945,6 @@ int Hermes::rhs(BoutReal t) {
     
     if (vepsi_dissipation) {
       // Adds dissipation term like in other equations
-      // Maximum speed either electron sound speed or Alfven speed
-      Field3D max_speed = Bnorm * coord->Bxy /
-                          sqrt(SI::mu0 * AA * SI::Mp * Nnorm * Nelim) /
-                          Cs0; // Alfven speed (normalised by Cs0)
-      Field3D elec_sound = sqrt(mi_me) * sound_speed; // Electron sound speed
-      for (auto& i : max_speed.getRegion(RGN_ALL)) {
-        // Maximum of Alfven or thermal electron speed
-	if (elec_sound[i] > max_speed[i]) {
-	  max_speed[i] = elec_sound[i];
-	}
-
-        // Limit to 100x reference sound speed or light speed
-        BoutReal lim = BOUTMIN(100., 3e8/Cs0);
-        if (max_speed[i] > lim) {
-          max_speed[i] = lim;
-        }
-      }
-
       ddt(VePsi) -= FV::Div_par(Ve - Vi, 0.0, max_speed);
     }
   }
@@ -3077,7 +3060,7 @@ int Hermes::rhs(BoutReal t) {
     // Parallel flow
     if (currents) {
       // Like Ne term, parallel wave speed increased
-      ddt(Pe) -= FV::Div_par(Pe, Ve, sqrt(mi_me) * sound_speed);
+      ddt(Pe) -= FV::Div_par(Pe, Ve, max_speed);
     } else {
       ddt(Pe) -= FV::Div_par(Pe, Ve, sound_speed);
     }

@@ -3614,6 +3614,7 @@ int Hermes::rhs(BoutReal t) {
     Field2D NeDC = DC(Ne);
     Field2D VortDC = DC(Vort);
     Field2D NViDC = DC(NVi);
+    Field2D VePsiDC = DC(VePsi);
 
     // Flux surface averages.
     // In the core region it can be desirable to damp towards a flux surface average
@@ -3673,6 +3674,7 @@ int Hermes::rhs(BoutReal t) {
             ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeInner(i, j));
             ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortInner(i, j));
             ddt(NVi)(i, j, k) -= D * (NVi(i, j, k) - NViInner(i, j));
+            ddt(VePsi)(i, j, k) -= D * (VePsi(i, j, k) - VePsiDC(i, j));
             
             // Radial fluxes
             BoutReal f = D * (Ne(i + 1, j, k) - Ne(i, j, k));
@@ -3734,6 +3736,7 @@ int Hermes::rhs(BoutReal t) {
             ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeDC(i, j));
             ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortDC(i, j));
             ddt(NVi)(i, j, k) -= D * (NVi(i, j, k) - NViDC(i, j));
+            ddt(VePsi)(i, j, k) -= D * (VePsi(i, j, k) - VePsiDC(i, j));
 
             // Radial fluxes
             

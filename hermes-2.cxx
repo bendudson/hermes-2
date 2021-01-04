@@ -1671,7 +1671,7 @@ int Hermes::rhs(BoutReal t) {
               -sqrt(tesheath) * (sqrt(mi_me) / (2. * sqrt(PI))) * exp(-phi_te);
           // J = n*(Vi - Ve)
           BoutReal jsheath = nesheath * (visheath - vesheath);
-          if (nesheath < 1e-10) {
+          if (nesheath <= nesheath_floor) {
             vesheath = visheath;
             jsheath = 0.0;
           }
@@ -2077,7 +2077,7 @@ int Hermes::rhs(BoutReal t) {
               sqrt(tesheath) * (sqrt(mi_me) / (2. * sqrt(PI))) * exp(-phi_te);
           // J = n*(Vi - Ve)
           BoutReal jsheath = nesheath * (visheath - vesheath);
-          if (nesheath < 1e-10) {
+          if (nesheath <= nesheath_floor) {
             vesheath = visheath;
             jsheath = 0.0;
           }
@@ -2089,7 +2089,7 @@ int Hermes::rhs(BoutReal t) {
             Vort(r.ind, jy, jz) = Vort(r.ind, mesh->yend, jz);
 
             // Here zero-gradient Te, heat flux applied later
-            Te(r.ind, jy, jz) = tesheath;
+            Te(r.ind, jy, jz) = Te(r.ind, mesh->yend, jz);
             Ti(r.ind, jy, jz) = Ti(r.ind, mesh->yend, jz);
 
             // Dirichlet conditions

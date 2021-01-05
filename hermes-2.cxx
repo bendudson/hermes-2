@@ -1093,7 +1093,24 @@ int Hermes::rhs(BoutReal t) {
     sound_speed = floor(sound_speed, floor_num_cs);
   }
   sound_speed.applyBoundary("neumann");
-  
+
+  // Maximum wave speed either electron sound speed or Alfven speed
+  Field3D max_speed = Bnorm * coord->Bxy /
+    sqrt(SI::mu0 * AA * SI::Mp * Nnorm * Nelim) /
+    Cs0; // Alfven speed (normalised by Cs0)
+  Field3D elec_sound = sqrt(mi_me) * sound_speed; // Electron sound speed
+  for (auto& i : max_speed.getRegion(RGN_ALL)) {
+    if (elec_sound[i] > max_speed[i]) {
+      max_speed[i] = elec_sound[i];
+    }
+
+    // Limit to 100x reference sound speed or light speed
+    BoutReal lim = BOUTMIN(100., 3e8/Cs0);
+    if (max_speed[i] > lim) {
+      max_speed[i] = lim;
+    }
+  }
+
   //////////////////////////////////////////////////////////////
   // Calculate electrostatic potential phi
   //
@@ -2660,7 +2677,7 @@ int Hermes::rhs(BoutReal t) {
     if (currents) {
       // Parallel wave speed increased to electron sound speed
       // since electrostatic & electromagnetic waves are supported
-      ddt(Ne) -= FV::Div_par(Ne, Ve, sqrt(mi_me) * sound_speed);
+      ddt(Ne) -= FV::Div_par(Ne, Ve, max_speed);
     } else {
       // Parallel wave speed is ion sound speed
       ddt(Ne) -= FV::Div_par(Ne, Ve, sound_speed);
@@ -2848,22 +2865,6 @@ int Hermes::rhs(BoutReal t) {
 
     if (vort_dissipation) {
       // Adds dissipation term like in other equations
-      // Maximum speed either electron sound speed or Alfven speed
-      Field3D max_speed = Bnorm * coord->Bxy /
-                          sqrt(SI::mu0 * AA * SI::Mp * Nnorm * Nelim) /
-                          Cs0; // Alfven speed (normalised by Cs0)
-      Field3D elec_sound = sqrt(mi_me) * sound_speed; // Electron sound speed
-      for (auto& i : max_speed.getRegion(RGN_ALL)) {
-	if (elec_sound[i] > max_speed[i]) {
-	  max_speed[i] = elec_sound[i];
-	}
-
-        // Limit to 100x reference sound speed or light speed
-        BoutReal lim = BOUTMIN(100., 3e8/Cs0);
-        if (max_speed[i] > lim) {
-          max_speed[i] = lim;
-        }
-      }
 
       ddt(Vort) -= FV::Div_par(Vort, 0.0, max_speed);
     }
@@ -2946,24 +2947,6 @@ int Hermes::rhs(BoutReal t) {
     
     if (vepsi_dissipation) {
       // Adds dissipation term like in other equations
-      // Maximum speed either electron sound speed or Alfven speed
-      Field3D max_speed = Bnorm * coord->Bxy /
-                          sqrt(SI::mu0 * AA * SI::Mp * Nnorm * Nelim) /
-                          Cs0; // Alfven speed (normalised by Cs0)
-      Field3D elec_sound = sqrt(mi_me) * sound_speed; // Electron sound speed
-      for (auto& i : max_speed.getRegion(RGN_ALL)) {
-        // Maximum of Alfven or thermal electron speed
-	if (elec_sound[i] > max_speed[i]) {
-	  max_speed[i] = elec_sound[i];
-	}
-
-        // Limit to 100x reference sound speed or light speed
-        BoutReal lim = BOUTMIN(100., 3e8/Cs0);
-        if (max_speed[i] > lim) {
-          max_speed[i] = lim;
-        }
-      }
-
       ddt(VePsi) -= FV::Div_par(Ve - Vi, 0.0, max_speed);
     }
   }
@@ -3079,7 +3062,7 @@ int Hermes::rhs(BoutReal t) {
     // Parallel flow
     if (currents) {
       // Like Ne term, parallel wave speed increased
-      ddt(Pe) -= FV::Div_par(Pe, Ve, sqrt(mi_me) * sound_speed);
+      ddt(Pe) -= FV::Div_par(Pe, Ve, max_speed);
     } else {
       ddt(Pe) -= FV::Div_par(Pe, Ve, sound_speed);
     }
@@ -3092,7 +3075,7 @@ int Hermes::rhs(BoutReal t) {
 
     // This term energetically balances diamagnetic term
     // in the vorticity equation
-    ddt(Pe) -= j_diamag_scale * (2. / 3) * Pe * (Curlb_B * Grad(phi));
+    ddt(Pe) -= j_diamag_scale * (2. / 3) * floor(Pe, 0.0) * (Curlb_B * Grad(phi));
   }
 
   // Parallel heat conduction
@@ -3233,7 +3216,7 @@ int Hermes::rhs(BoutReal t) {
   if (pe_par_p_term) {
     // This term balances energetically the pressure term
     // in Ohm's law
-    ddt(Pe) -= (2. / 3) * Pelim * Div_par(Ve);
+    ddt(Pe) -= (2. / 3) * floor(Pe, 0.0) * Div_par(Ve);
   }
   if (ramp_mesh && (t < ramp_timescale)) {
     ddt(Pe) += PeTarget / ramp_timescale;
@@ -3633,6 +3616,7 @@ int Hermes::rhs(BoutReal t) {
     Field2D NeDC = DC(Ne);
     Field2D VortDC = DC(Vort);
     Field2D NViDC = DC(NVi);
+    Field2D VePsiDC = DC(VePsi);
 
     // Flux surface averages.
     // In the core region it can be desirable to damp towards a flux surface average
@@ -3692,6 +3676,7 @@ int Hermes::rhs(BoutReal t) {
             ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeInner(i, j));
             ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortInner(i, j));
             ddt(NVi)(i, j, k) -= D * (NVi(i, j, k) - NViInner(i, j));
+            ddt(VePsi)(i, j, k) -= D * (VePsi(i, j, k) - VePsiDC(i, j));
             
             // Radial fluxes
             BoutReal f = D * (Ne(i + 1, j, k) - Ne(i, j, k));
@@ -3753,6 +3738,7 @@ int Hermes::rhs(BoutReal t) {
             ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeDC(i, j));
             ddt(Vort)(i, j, k) -= D * (Vort(i, j, k) - VortDC(i, j));
             ddt(NVi)(i, j, k) -= D * (NVi(i, j, k) - NViDC(i, j));
+            ddt(VePsi)(i, j, k) -= D * (VePsi(i, j, k) - VePsiDC(i, j));
 
             // Radial fluxes
             

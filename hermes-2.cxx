@@ -309,7 +309,9 @@ int Hermes::init(bool restarting) {
   OPTION(optsc, pe_bndry_flux, true);
   OPTION(optsc, vort_bndry_flux, false);
 
-  OPTION(optsc, ramp_mesh, true);
+  ramp_mesh = optsc["ramp_mesh"]
+                     .doc("Add profiles from mesh file over a period of time")
+                     .withDefault<bool>(false);
   OPTION(optsc, ramp_timescale, 1e4);
 
   OPTION(optsc, energy_source, false);

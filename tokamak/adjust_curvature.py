@@ -7,7 +7,7 @@
 import sys
 
 if len(sys.argv) != 2:
-    print("Usage: {} gridfile.nc")
+    print(f"Usage: {sys.argv[0]} gridfile.nc")
     print("Note: The input grid file is modified")
     sys.exit(1)
 

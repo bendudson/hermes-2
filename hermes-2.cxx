@@ -322,6 +322,10 @@ int Hermes::init(bool restarting) {
               .doc("Polarisation current with explicit Pi dependence")
               .withDefault<bool>(true);
 
+  j_pol_simplified = optsc["j_pol_simplified"]
+              .doc("Polarisation current without explicit Pi dependence")
+              .withDefault<bool>(false);
+
   OPTION(optsc, parallel_flow, true);
   OPTION(optsc, parallel_flow_p_term, parallel_flow);
   OPTION(optsc, pe_par, true);
@@ -624,8 +628,11 @@ int Hermes::init(bool restarting) {
   } else {
     Pi = Ne;
   }
-  
-  if (j_par || j_diamag) {
+
+  evolve_vort = optsc["evolve_vort"].doc("Evolve Vorticity?")
+    .withDefault<bool>(true);
+
+  if ((j_par || j_diamag) && evolve_vort) {
     // Have a source of vorticity
     solver->add(Vort, "Vort");
     EvolvingVars.add(Vort);
@@ -661,7 +668,7 @@ int Hermes::init(bool restarting) {
 
   if (verbose) {
     SAVE_REPEAT(Ti);
-    if (electron_ion_transfer) {
+    if (electron_ion_transfer && evolve_ti) {
       SAVE_REPEAT(Wi);
     }
     if (ion_velocity) {
@@ -744,7 +751,7 @@ int Hermes::init(bool restarting) {
     Bxyz.applyBoundary("neumann");
     ASSERT1( min(Bxyz) > 0.0 );
     
-    mesh->communicate(Bxyz, coord->dz, coord->dy, coord->J, coord->g_23, coord->g23, coord->Bxy); // To get yup/ydown fields
+    mesh->communicate(Bxyz, coord->dz, coord->dy, coord->J, coord->g_22, coord->g_23, coord->g23, coord->Bxy); // To get yup/ydown fields
 
     // Note: A Neumann condition simplifies boundary conditions on fluxes
     // where the condition e.g. on J should be on flux (J/B)
@@ -1229,6 +1236,7 @@ int Hermes::rhs(BoutReal t) {
         // Uses an exponential decay of the weighting of the value in the boundary
         // so that the solution is well behaved for arbitrary steps
         BoutReal weight = exp(-(t - phi_boundary_last_update) / phi_boundary_timescale);
+	// output.write("weight: {}\n", weight);
         phi_boundary_last_update = t;
 
         if (mesh->firstX()) {
@@ -1238,23 +1246,22 @@ int Hermes::rhs(BoutReal t) {
               phivalue += phi(mesh->xstart, j, k);
             }
             phivalue /= mesh->LocalNz; // Average in Z of point next to boundary
+	    
+	    for (int k = 0; k < mesh->LocalNz; k++) {
+	      phivalue = phi(mesh->xstart, j, k);
+	      // Old value of phi at boundary
+	      BoutReal oldvalue =  phi(mesh->xstart,j,k);//0.5 * (phi(mesh->xstart - 1, j, k) + phi(mesh->xstart, j, k));
 
-            // Old value of phi at boundary
-            BoutReal oldvalue =
-                0.5 * (phi(mesh->xstart - 1, j, 0) + phi(mesh->xstart, j, 0));
-
-            // New value of phi at boundary, relaxing towards phivalue
-            BoutReal newvalue =
-                weight * oldvalue + (1. - weight) * phivalue;
-
-            // Set phi at the boundary to this value
-            for (int k = 0; k < mesh->LocalNz; k++) {
+	      // New value of phi at boundary, relaxing towards phivalue
+	      BoutReal newvalue = weight * oldvalue + (1. - weight) * phivalue;
+	    
+	      // Set phi at the boundary to this value
               phi(mesh->xstart - 1, j, k) = 2.*newvalue - phi(mesh->xstart, j, k);
-
+	      
               // Note: This seems to make a difference, but don't know why.
               // Without this, get convergence failures with no apparent instability
               // (all fields apparently smooth, well behaved)
-              phi(mesh->xstart - 2, j, k) = phi(mesh->xstart - 1, j, k);
+              // phi(mesh->xstart - 2, j, k) = phi(mesh->xstart - 1, j, k);
             }
           }
         }
@@ -1267,20 +1274,23 @@ int Hermes::rhs(BoutReal t) {
             }
             phivalue /= mesh->LocalNz; // Average in Z of point next to boundary
 
-            // Old value of phi at boundary
-            BoutReal oldvalue = 0.5 * (phi(mesh->xend + 1, j, 0) + phi(mesh->xend, j, 0));
+	    for (int k = 0; k < mesh->LocalNz; k++) {
+	      phivalue = phi(mesh->xend, j, k);
 
-            // New value of phi at boundary, relaxing towards phivalue
-            BoutReal newvalue = weight * oldvalue + (1. - weight) * phivalue;
 
-            // Set phi at the boundary to this value
-            for (int k = 0; k < mesh->LocalNz; k++) {
-              phi(mesh->xend + 1, j, k) = 2.*newvalue - phi(mesh->xend, j, k);
+	      // Old value of phi at boundary
+	      BoutReal oldvalue = phi(mesh->xend,j,k); //0.5 * (phi(mesh->xend + 1, j, k) + phi(mesh->xend, j, k));
+	      
+	      // New value of phi at boundary, relaxing towards phivalue
+	      BoutReal newvalue = weight * oldvalue + (1. - weight) * phivalue;
+	      
+	      // Set phi at the boundary to this value
+              phi(mesh->xend + 1, j, k) = 2.* newvalue - phi(mesh->xend, j, k);
 
               // Note: This seems to make a difference, but don't know why.
               // Without this, get convergence failures with no apparent instability
               // (all fields apparently smooth, well behaved)
-              phi(mesh->xend + 2, j, k) = phi(mesh->xend + 1, j, k);
+              // phi(mesh->xend + 2, j, k) = phi(mesh->xend + 1, j, k);
             }
           }
         }
@@ -1390,9 +1400,7 @@ int Hermes::rhs(BoutReal t) {
           if (newXZsolver) {
             // Use the new LaplaceXZ solver
             // newSolver->setCoefs(1./SQ(coord->Bxy), 0.0); // Set when initialised
-            phi = newSolver->solve(Vort,
-                                   withBoundary(phi + Pi,  // Value in domain
-                                                phi_boundary3d)); // boundary
+            phi = newSolver->solve(Vort, phi + Pi);
           } else {
             // Use older Laplacian solver
             // phiSolver->setCoefC(1./SQ(coord->Bxy)); // Set when initialised
@@ -1492,7 +1500,11 @@ int Hermes::rhs(BoutReal t) {
         // Special case where Ohm's law has no time-derivatives
         mesh->communicate(phi);
 
-        Ve = Vi + (Grad_parP(phi) - Grad_parP(Pe) / Ne) / nu;
+	if(fci_transform){
+	  // Ve = Vi + (Grad_parP(phi) - Grad_parP(Pe) / Ne) / nu;
+	}else{
+	  Ve = Vi + (Grad_parP(phi) - Grad_parP(Pe) / Ne) / nu;
+	}
 
         if (thermal_force) {
 	  if(fci_transform) {mesh->communicate(Te);}
@@ -2490,7 +2502,7 @@ int Hermes::rhs(BoutReal t) {
 
   ddt(Vort) = 0.0;
 
-  if (currents) {
+  if (currents && evolve_vort) {
     // Only evolve vorticity if any diamagnetic or parallel currents
     // are included.
 
@@ -2548,11 +2560,10 @@ int Hermes::rhs(BoutReal t) {
 	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi + Pi, vort_bndry_flux,
 	  				     poloidal_flows) * bracket_factor;
 	  
-	}else{
+	}else if (j_pol_simplified) {
 	  // use simplified polarization term from i.e. GBS
 	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(Vort, phi, vort_bndry_flux,
-					     poloidal_flows, false) * bracket_factor;
-
+	  				     poloidal_flows, false) * bracket_factor;
 	}
       }
 
@@ -3074,6 +3085,77 @@ int Hermes::rhs(BoutReal t) {
       }
       }
     }
+    Field3D sheath_dpe = 0.;
+    if (parallel_sheaths){
+      for (const auto &bndry_par : mesh->getBoundariesPar()) {
+	for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
+	  int x = bndry_par->x; int y = bndry_par->y; int z = bndry_par->z;
+	  if (bndry_par->dir == 1){ // forwards
+	    // Temperature and density at the sheath entrance
+	    BoutReal tesheath = floor(
+				      0.5 * (Te(x, y, z) + Te.yup()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    BoutReal nesheath = floor(
+				      0.5 * (Ne(x, y, z) + Ne.yup()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    BoutReal vesheath = floor(
+				      0.5 * (Ve(x, y, z) + Ve.yup()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    
+	    // Sound speed (normalised units)
+	    // BoutReal Cs = sqrt(tesheath + tisheath);
+	    
+	    // Heat flux
+	    BoutReal q = (sheath_gamma_e - 1.5) * tesheath * nesheath * vesheath;
+	    // Multiply by cell area to get power
+	    BoutReal flux =
+	      q
+	      * (coord->J(x, y, z) + coord->J.yup()(x, y + bndry_par->dir, z))
+	      / (sqrt(coord->g_22(x, y, z))
+		 + sqrt(coord->g_22.yup()(x, y + bndry_par->dir, z)));
+	    
+	    // Divide by volume of cell, and 2/3 to get pressure
+	    BoutReal power =
+	      flux
+	      / (coord->dy(x, y, z) * coord->J(x, y, z));
+	    // ddt(Pe)(x, y, z) -= (2. / 3) * power;
+	    sheath_dpe(x, y, z) = - (2. / 3) * power;
+	  } else { // backwards
+	    // Temperature and density at the sheath entrance
+	    BoutReal tesheath = floor(
+				      0.5 * (Te(x, y, z) + Te.ydown()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    BoutReal nesheath = floor(
+				      0.5 * (Ne(x, y, z) + Ne.ydown()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    BoutReal vesheath = floor(
+				      0.5 * (Ve(x, y, z) + Ve.ydown()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    
+	    // Sound speed (normalised units)
+	    // BoutReal Cs = sqrt(tesheath + tisheath);
+	    
+	    // Heat flux
+	    BoutReal q = (sheath_gamma_e - 1.5) * tesheath * nesheath * vesheath;
+	    
+	    // Multiply by cell area to get power
+	    BoutReal flux =
+	      q
+	      * (coord->J(x, y, z) + coord->J.ydown()(x, y + bndry_par->dir, z))
+	      / (sqrt(coord->g_22(x, y, z))
+		 + sqrt(coord->g_22.ydown()(x, y + bndry_par->dir, z)));
+	    
+	    // Divide by volume of cell, and 2/3 to get pressure
+	    BoutReal power =
+	      flux
+	      / (coord->dy(x, y, z) * coord->J(x, y, z));
+	    sheath_dpe(x, y, z) = - (2. / 3) * power;
+	  }
+	}
+      }	      
+    }
+    ddt(Pe) += sheath_dpe;
+
     // Transfer and source terms
     if (thermal_force) {
       if (fci_transform) {
@@ -3446,6 +3528,79 @@ int Hermes::rhs(BoutReal t) {
       }
       }
     }
+
+    Field3D sheath_dpi = 0.0;
+    
+    if (parallel_sheaths){
+      for (const auto &bndry_par : mesh->getBoundariesPar()) {
+	for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
+	  int x = bndry_par->x; int y = bndry_par->y; int z = bndry_par->z;
+	  if (bndry_par->dir == 1){ // forwards
+	    // Temperature and density at the sheath entrance
+	    BoutReal tisheath = floor(
+				      0.5 * (Ti(x, y, z) + Ti.yup()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    BoutReal nesheath = floor(
+				      0.5 * (Ne(x, y, z) + Ne.yup()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    BoutReal visheath = floor(
+				      0.5 * (Vi(x, y, z) + Vi.yup()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    
+	    // Sound speed (normalised units)
+	    // BoutReal Cs = sqrt(tesheath + tisheath);
+	    
+	    // Heat flux
+	    BoutReal q = (sheath_gamma_i - 1.5) * tisheath * nesheath * visheath;
+	    
+	    // Multiply by cell area to get power
+	    BoutReal flux =
+	      q
+	      * (coord->J(x, y, z) + coord->J.yup()(x, y + bndry_par->dir, z))
+	      / (sqrt(coord->g_22(x, y, z))
+		 + sqrt(coord->g_22.yup()(x, y + bndry_par->dir, z)));
+	    
+	    // Divide by volume of cell, and 2/3 to get pressure
+	    BoutReal power =
+	      flux
+	      / (coord->dy(x, y, z) * coord->J(x, y, z));
+	    sheath_dpi(x, y, z) = - (2. / 3) * power;
+	  } else { // backwards
+	    // Temperature and density at the sheath entrance
+	    BoutReal tisheath = floor(
+				      0.5 * (Ti(x, y, z) + Ti.ydown()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    BoutReal nesheath = floor(
+				      0.5 * (Ne(x, y, z) + Ne.ydown()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    BoutReal visheath = floor(
+				      0.5 * (Vi(x, y, z) + Vi.ydown()(x, y + bndry_par->dir, z)),
+				      0.0);
+	    
+	    // Sound speed (normalised units)
+	    // BoutReal Cs = sqrt(tesheath + tisheath);
+	    
+	    // Heat flux
+	    BoutReal q = (sheath_gamma_i - 1.5) * tisheath * nesheath * visheath;
+	    
+	    // Multiply by cell area to get power
+	    BoutReal flux =
+	      q
+	      * (coord->J(x, y, z) + coord->J.ydown()(x, y + bndry_par->dir, z))
+	      / (sqrt(coord->g_22(x, y, z))
+		 + sqrt(coord->g_22.ydown()(x, y + bndry_par->dir, z)));
+	    
+	    // Divide by volume of cell, and 2/3 to get pressure
+	    BoutReal power =
+	      flux
+	      / (coord->dy(x, y, z) * coord->J(x, y, z));
+	    sheath_dpi(x, y, z) = - (2. / 3) * power;
+		    
+	  }
+	}
+      }	      
+    }
+    ddt(Pi) += sheath_dpi;
 
     //////////////////////
     // Sources

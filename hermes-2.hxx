@@ -101,6 +101,7 @@ private:
   bool show_timesteps;  // Show intermediate timesteps?
   bool evolve_te;       // Evolve electron temperature?
   bool evolve_ti;       // Evolve ion temperature?
+  bool evolve_vort;     // Evolve vorticity?
   
   bool electromagnetic; // Include magnetic potential psi
   bool FiniteElMass;    // Finite Electron Mass
@@ -108,6 +109,8 @@ private:
   bool j_diamag;    // Diamagnetic current: Vort <-> Pe
   bool j_par;       // Parallel current:    Vort <-> Psi
   bool j_pol_pi;       // Polarisation current with explicit Pi dependence
+  bool j_pol_simplified;       // Polarisation current with explicit Pi dependence
+  
   bool parallel_flow;
   bool parallel_flow_p_term; // Vi advection terms in Pe, Pi
   bool pe_par;      // Parallel pressure gradient: Pe <-> Psi

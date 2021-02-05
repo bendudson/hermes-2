@@ -86,10 +86,10 @@ struct Stencil1D {
 };
 
 // First order upwind for testing
-void Upwind(Stencil1D &n, const BoutReal h) { n.L = n.R = n.c; }
+void Upwind(Stencil1D &n) { n.L = n.R = n.c; }
 
 // Fromm method
-void Fromm(Stencil1D &n, const BoutReal h) {
+void Fromm(Stencil1D &n) {
   n.L = n.c - 0.25 * (n.p - n.m);
   n.R = n.c + 0.25 * (n.p - n.m);
 }
@@ -115,7 +115,7 @@ BoutReal minmod(BoutReal a, BoutReal b, BoutReal c) {
   return SIGN(a) * BOUTMIN(fabs(a), fabs(b), fabs(c));
 }
 
-void MinMod(Stencil1D &n, const BoutReal h) {
+void MinMod(Stencil1D &n) {
   // Choose the gradient within the cell
   // as the minimum (smoothest) solution
   BoutReal slope = minmod(n.p - n.c, n.c - n.m);
@@ -124,7 +124,7 @@ void MinMod(Stencil1D &n, const BoutReal h) {
 }
 
 // Monotonized Central limiter (Van-Leer)
-void MC(Stencil1D &n, const BoutReal h) {
+void MC(Stencil1D &n) {
   BoutReal slope =
       minmod(2. * (n.p - n.c), 0.5 * (n.p - n.m), 2. * (n.c - n.m));
   n.L = n.c - 0.5 * slope;
@@ -294,7 +294,7 @@ const Field3D Div_n_bxGrad_f_B_XPPM(const Field3D &n, const Field3D &f,
         // Upwind(s, mesh->dx(i,j));
         // XPPM(s, mesh->dx(i,j));
         // Fromm(s, coord->dx(i, j));
-        MC(s, coord->dx(i, j, k));
+        MC(s);
 
         // Right side
         if ((i == mesh->xend) && (mesh->lastX())) {
@@ -370,7 +370,7 @@ const Field3D Div_n_bxGrad_f_B_XPPM(const Field3D &n, const Field3D &f,
         // Upwind(s, coord->dz);
         // XPPM(s, coord->dz);
         // Fromm(s, coord->dz);
-        MC(s, coord->dz(i,j,k));
+        MC(s);
 
         if (vU > 0.0) {
           BoutReal flux = vU * s.R; 

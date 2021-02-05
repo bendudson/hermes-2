@@ -19,20 +19,29 @@ Nesep = args.Nsep
 from boututils.datafile import DataFile
 import numpy as np
 
+qe = 1.602e-19
+
 with DataFile(filename) as f:
-    Ne = f["Ni0"]  # Note: In 1e20 m^-3
-    Te = f["Te0"]
-    Ti = f["Ti0"]
+    P = 0.0
+    if "pressure" in f.keys():
+        P = f["pressure"]  # In Pascals
+    # Check that P's not zero. This is because some grid files
+    # may have pressure = 0.
+
+    if np.amax(P) < 1e-3:
+        print("WARNING: input grid has no pressure, or pressure is zero")
+        Ne = f["Ni0"] * 1e20  # Note: Grid file in 1e20 m^-3
+        Te = f["Te0"]
+        Ti = f["Ti0"]
+        P = qe * Ne * (Te + Ti)
+
     ixseps = f["ixseps1"]
     # Y index around the midplane. Doesn't matter as long as it's in the core region
     yind = int(0.5 * (f["jyseps1_2"] + f["jyseps2_2"] + 1))
 
-# Total pressure
-P = Ne * (Te + Ti)
-
 # Subtract pressure, to get required value at separatrix
 # Clip to impose minimum of zero
-P = np.clip(P - (P[ixseps, yind] - (Nesep * 1e-20) * 2.0 * Tsep), 1e-3, None)
+P = np.clip(P - (P[ixseps, yind] - qe * Nesep * 2.0 * Tsep), 1e-3, None)
 
 shape = np.sqrt(P) / np.sqrt(P[ixseps, yind])  # 1 at the separatrix
 

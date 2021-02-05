@@ -71,3 +71,19 @@ from `1-no-currents` into `2-currents` and restart:
     $ cp 1-no-currents/BOUT.restart.* 2-currents/
     $ mpirun -np 16 ./hermes-2 -d 2-currents restart
 
+Analysis
+--------
+
+There are some python scripts to make plots and perform analysis of the volume
+integrated power sources, sinks and transfer terms. Most of these take two
+arguments: The grid file, and the directory containing the data e.g.
+
+    $ ./make2dplots.py tokamak-example.nc 1-no-currents
+
+
+- `make2dplots.py` Make 2D (poloidal cross-section) plots of the density and
+  temperature; radiation; and energy transfer
+- `plot_target_profiles.py`  Plot density, temperature and heat flux along
+  the inner and outer targets
+- `volume_integrals.py`  Integrate the power sources, sinks, and transfer terms
+  over the core and SOL regions of the grid.

@@ -1261,7 +1261,7 @@ int Hermes::rhs(BoutReal t) {
               // Note: This seems to make a difference, but don't know why.
               // Without this, get convergence failures with no apparent instability
               // (all fields apparently smooth, well behaved)
-              // phi(mesh->xstart - 2, j, k) = phi(mesh->xstart - 1, j, k);
+              phi(mesh->xstart - 2, j, k) = phi(mesh->xstart - 1, j, k);
             }
           }
         }
@@ -1290,7 +1290,7 @@ int Hermes::rhs(BoutReal t) {
               // Note: This seems to make a difference, but don't know why.
               // Without this, get convergence failures with no apparent instability
               // (all fields apparently smooth, well behaved)
-              // phi(mesh->xend + 2, j, k) = phi(mesh->xend + 1, j, k);
+              phi(mesh->xend + 2, j, k) = phi(mesh->xend + 1, j, k);
             }
           }
         }
@@ -1498,10 +1498,13 @@ int Hermes::rhs(BoutReal t) {
       } else {
         // Zero electron mass and electrostatic.
         // Special case where Ohm's law has no time-derivatives
-        mesh->communicate(phi);
+        mesh->communicate(phi,Pe);
 
 	if(fci_transform){
-	  // Ve = Vi + (Grad_parP(phi) - Grad_parP(Pe) / Ne) / nu;
+	  tau_e = (Cs0 / rho_s0) * tau_e0 * pow(Telim, 1.5) / Nelim;
+	  nu = resistivity_multiply / (1.96 * tau_e * mi_me);
+	  
+	  Ve = Vi + (Grad_parP(phi) - Grad_parP(Pe) / Ne) / nu;
 	}else{
 	  Ve = Vi + (Grad_parP(phi) - Grad_parP(Pe) / Ne) / nu;
 	}

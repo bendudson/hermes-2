@@ -174,7 +174,11 @@ private:
   bool sheath_yup, sheath_ydown; 
   bool test_boundaries;
   bool sheath_allow_supersonic; // If plasma is faster than sound speed, go to plasma velocity
-  bool parallel_sheaths;
+  bool parallel_sheaths;  
+  int par_sheath_model;  // Sets parallel boundary condition model
+  BoutReal electron_weight;  // electron heaviness in units of m_e (for slower boundaries)
+  bool par_sheath_ve;
+  
   BoundaryRegionPar* bndry_par;
 
   Field2D wall_flux; // Particle flux to wall (diagnostic)
@@ -234,7 +238,7 @@ private:
   // Normalisation parameters
   BoutReal Tnorm, Nnorm, Bnorm;
   BoutReal AA, Cs0, rho_s0, Omega_ci;
-  BoutReal mi_me, beta_e;
+  BoutReal mi_me, me_mi, beta_e;
   
   // Curvature, Grad-B drift
   Vector3D Curlb_B; // Curl(b/B)

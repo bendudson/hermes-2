@@ -453,7 +453,10 @@ int Hermes::init(bool restarting) {
   OPTION(optsc, sheath_ydown, true);     // Apply sheath at ydown?
   OPTION(optsc, test_boundaries, false); // Test boundary conditions
   OPTION(optsc, parallel_sheaths, false); // Apply parallel sheath conditions?
-
+  OPTION(optsc, par_sheath_model, 0);
+  OPTION(optsc, par_sheath_ve, true);
+  OPTION(optsc, electron_weight, 1.0);
+  
   sheath_allow_supersonic =
       optsc["sheath_allow_supersonic"]
           .doc("If plasma is faster than sound speed, go to plasma velocity")
@@ -495,10 +498,11 @@ int Hermes::init(bool restarting) {
   rho_s0 = Cs0 / Omega_ci;
 
   mi_me = AA * Mp / Me;
+  me_mi = Me / (AA * Mp);
   beta_e = qe * Tnorm * Nnorm / (SQ(Bnorm) / (2. * mu0));
 
-  output.write("\tmi_me=%e, beta_e=%e\n", mi_me, beta_e);
-  SAVE_ONCE(mi_me, beta_e);
+  output.write("\tmi_me={}, beta_e={}\n", mi_me, beta_e);
+  SAVE_ONCE(mi_me, beta_e, me_mi);
 
   output.write("\t Cs=%e, rho_s=%e, Omega_ci=%e\n", Cs0, rho_s0, Omega_ci);
   SAVE_ONCE(Cs0, rho_s0, Omega_ci);
@@ -1038,7 +1042,7 @@ int Hermes::init(bool restarting) {
   Dn = 0.0;
 
   SAVE_REPEAT(Telim, Tilim);
-
+  
   if (verbose) {
     // Save additional fields
     SAVE_REPEAT(Jpar); // Parallel current
@@ -1948,98 +1952,199 @@ int Hermes::rhs(BoutReal t) {
   }
 
   if (parallel_sheaths){
-    for (const auto &bndry_par : mesh->getBoundariesPar()) {
-      for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
-	int x = bndry_par->x; int y = bndry_par->y; int z = bndry_par->z;
-	// Zero-gradient density
-	BoutReal nesheath = floor(Ne(x, y, z), 0.0);
+    switch (par_sheath_model) {
+    case 0 :{
+      for (const auto &bndry_par : mesh->getBoundariesPar()) {
+	for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
+	  int x = bndry_par->x; int y = bndry_par->y; int z = bndry_par->z;
+	  // Zero-gradient density
+	  BoutReal nesheath = floor(Ne(x, y, z), 0.0);
 	
-	// Temperature at the sheath entrance
-	BoutReal tesheath = floor(Te(x, y, z), 0.0);
-	BoutReal tisheath = floor(Ti(x, y, z), 0.0);
+	  // Temperature at the sheath entrance
+	  BoutReal tesheath = floor(Te(x, y, z), 0.0);
+	  BoutReal tisheath = floor(Ti(x, y, z), 0.0);
 	
-	// Zero-gradient potential
-	BoutReal phisheath = phi(x, y, z);
+	  // Zero-gradient potential
+	  BoutReal phisheath = phi(x, y, z);
 	
-	// Ion velocity goes to the sound speed. Note negative since out of the domain
-	BoutReal visheath = -sqrt(tesheath + tisheath);
+	  // Ion velocity goes to the sound speed. Note negative since out of the domain
+	  BoutReal visheath = -sqrt(tesheath + tisheath);
 
-	if (bndry_par->dir == 1){
-	  visheath = sqrt(tesheath + tisheath);
-	}
+	  if (bndry_par->dir == 1){
+	    visheath = sqrt(tesheath + tisheath);
+	  }
 	
-	if (sheath_allow_supersonic && (Vi(x, y, z) < visheath)) {
-	  // If plasma is faster, go to plasma velocity
-	  visheath = Vi(x, y, z);
-	}
+	  if (sheath_allow_supersonic && (Vi(x, y, z) < visheath)) {
+	    // If plasma is faster, go to plasma velocity
+	    visheath = Vi(x, y, z);
+	  }
 	
-	// Sheath current
-	// Note that phi/Te >= 0.0 since for phi < 0
-	// vesheath is the electron saturation current
-	BoutReal phi_te =
-	  floor(phisheath / Telim(x, y, z), 0.0);
-	BoutReal vesheath =
-	  -sqrt(tesheath) * (sqrt(mi_me) / (2. * sqrt(PI))) * exp(-phi_te);
+	  // Sheath current
+	  // Note that phi/Te >= 0.0 since for phi < 0
+	  // vesheath is the electron saturation current
+	  BoutReal phi_te =
+	    floor(phisheath / Telim(x, y, z), 0.0);
 
-	if (bndry_par->dir == 1){
-	  vesheath *= -1.;
-	}
+	  BoutReal vesheath =
+	    -sqrt(tesheath) * (sqrt(mi_me/electron_weight) / (2. * sqrt(PI))) * exp(-phi_te);
 	
-	// J = n*(Vi - Ve)
-	BoutReal jsheath = nesheath * (visheath - vesheath);
-	if (nesheath < 1e-10) {
-	  vesheath = visheath;
-	  jsheath = 0.0;
-	}
+	  if (bndry_par->dir == 1){
+	    vesheath *= -1.;
+	  }
+	
+	  // J = n*(Vi - Ve)
+	  BoutReal jsheath = nesheath * (visheath - vesheath);
+	  if (nesheath < 1e-10) {
+	    vesheath = visheath;
+	    jsheath = 0.0;
+	  }
 
-	if (bndry_par->dir == 1){
-	  // Apply boundary condition half-way between cells
-	  // Neumann conditions
-	  Ne.yup()(x, y+bndry_par->dir, z) = nesheath;
-	  phi.yup()(x, y+bndry_par->dir, z) = phisheath;
-	  Vort.yup()(x, y+bndry_par->dir, z) = Vort(x, y, z);
+	  if (bndry_par->dir == 1){
+	    // Apply boundary condition half-way between cells
+	    // Neumann conditions
+	    Ne.yup()(x, y+bndry_par->dir, z) = nesheath;
+	    phi.yup()(x, y+bndry_par->dir, z) = phisheath;
+	    Vort.yup()(x, y+bndry_par->dir, z) = Vort(x, y, z);
 	
-	  // Here zero-gradient Te, heat flux applied later
-	  Te.yup()(x, y+bndry_par->dir, z) = Te(x, y, z);
-	  Ti.yup()(x, y+bndry_par->dir, z) = Ti(x, y, z);
+	    // Here zero-gradient Te, heat flux applied later
+	    Te.yup()(x, y+bndry_par->dir, z) = Te(x, y, z);
+	    Ti.yup()(x, y+bndry_par->dir, z) = Ti(x, y, z);
 	
-	  Pe.yup()(x, y+bndry_par->dir, z) = Pe(x, y, z);
-	  Pelim.yup()(x, y+bndry_par->dir, z) = Pelim(x, y, z);
-	  Pi.yup()(x, y+bndry_par->dir, z) = Pi(x, y, z);
-	  Pilim.yup()(x, y+bndry_par->dir, z) = Pilim(x, y, z);
+	    Pe.yup()(x, y+bndry_par->dir, z) = Pe(x, y, z);
+	    Pelim.yup()(x, y+bndry_par->dir, z) = Pelim(x, y, z);
+	    Pi.yup()(x, y+bndry_par->dir, z) = Pi(x, y, z);
+	    Pilim.yup()(x, y+bndry_par->dir, z) = Pilim(x, y, z);
 	
-	  // Dirichlet conditions
-	  Vi.yup()(x, y+bndry_par->dir, z) = 2. * visheath - Vi(x, y, z);
-	  Ve.yup()(x, y+bndry_par->dir, z) = 2. * vesheath - Ve(x, y, z);
-	  Jpar.yup()(x, y+bndry_par->dir, z) =
-	    2. * jsheath - Jpar(x, y, z);
-	  NVi.yup()(x, y+bndry_par->dir, z) =
-	    2. * nesheath * visheath - NVi(x, y, z);
-	} else if (bndry_par->dir == -1) {
-	  // Apply boundary condition half-way between cells
-	  // Neumann conditions
-	  Ne.ydown()(x, y+bndry_par->dir, z) = nesheath;
-	  phi.ydown()(x, y+bndry_par->dir, z) = phisheath;
-	  Vort.ydown()(x, y+bndry_par->dir, z) = Vort(x, y, z);
+	    // Dirichlet conditions
+	    Vi.yup()(x, y+bndry_par->dir, z) = 2. * visheath - Vi(x, y, z);
+	    if (par_sheath_ve){
+	      Ve.yup()(x, y+bndry_par->dir, z) = 2. * vesheath - Ve(x, y, z);
+	    }
+	    Jpar.yup()(x, y+bndry_par->dir, z) =
+	      2. * jsheath - Jpar(x, y, z);
+	    NVi.yup()(x, y+bndry_par->dir, z) =
+	      2. * nesheath * visheath - NVi(x, y, z);
+	  } else if (bndry_par->dir == -1) {
+	    // Apply boundary condition half-way between cells
+	    // Neumann conditions
+	    Ne.ydown()(x, y+bndry_par->dir, z) = nesheath;
+	    phi.ydown()(x, y+bndry_par->dir, z) = phisheath;
+	    Vort.ydown()(x, y+bndry_par->dir, z) = Vort(x, y, z);
 	
-	  // Here zero-gradient Te, heat flux applied later
-	  Te.ydown()(x, y+bndry_par->dir, z) = Te(x, y, z);
-	  Ti.ydown()(x, y+bndry_par->dir, z) = Ti(x, y, z);
+	    // Here zero-gradient Te, heat flux applied later
+	    Te.ydown()(x, y+bndry_par->dir, z) = Te(x, y, z);
+	    Ti.ydown()(x, y+bndry_par->dir, z) = Ti(x, y, z);
 	
-	  Pe.ydown()(x, y+bndry_par->dir, z) = Pe(x, y, z);
-	  Pelim.ydown()(x, y+bndry_par->dir, z) = Pelim(x, y, z);
-	  Pi.ydown()(x, y+bndry_par->dir, z) = Pi(x, y, z);
-	  Pilim.ydown()(x, y+bndry_par->dir, z) = Pilim(x, y, z);
+	    Pe.ydown()(x, y+bndry_par->dir, z) = Pe(x, y, z);
+	    Pelim.ydown()(x, y+bndry_par->dir, z) = Pelim(x, y, z);
+	    Pi.ydown()(x, y+bndry_par->dir, z) = Pi(x, y, z);
+	    Pilim.ydown()(x, y+bndry_par->dir, z) = Pilim(x, y, z);
 	
-	  // Dirichlet conditions
-	  Vi.ydown()(x, y+bndry_par->dir, z) = 2. * visheath - Vi(x, y, z);
-	  Ve.ydown()(x, y+bndry_par->dir, z) = 2. * vesheath - Ve(x, y, z);
-	  Jpar.ydown()(x, y+bndry_par->dir, z) =
-	    2. * jsheath - Jpar(x, y, z);
-	  NVi.ydown()(x, y+bndry_par->dir, z) =
-	    2. * nesheath * visheath - NVi(x, y, z);
+	    // Dirichlet conditions
+	    Vi.ydown()(x, y+bndry_par->dir, z) = 2. * visheath - Vi(x, y, z);
+	    if (par_sheath_ve) {
+	      Ve.ydown()(x, y+bndry_par->dir, z) = 2. * vesheath - Ve(x, y, z);
+	    }
+	    Jpar.ydown()(x, y+bndry_par->dir, z) =
+	      2. * jsheath - Jpar(x, y, z);
+	    NVi.ydown()(x, y+bndry_par->dir, z) =
+	      2. * nesheath * visheath - NVi(x, y, z);
+	  }
 	}
       }
+      break;
+    }
+    case 1:{ //insulating boundary
+      for (const auto &bndry_par : mesh->getBoundariesPar()) {
+	for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
+	  int x = bndry_par->x; int y = bndry_par->y; int z = bndry_par->z;
+	  // Zero-gradient density
+	  BoutReal nesheath = floor(Ne(x, y, z), 0.0);
+	
+	  // Temperature at the sheath entrance
+	  BoutReal tesheath = floor(Te(x, y, z), 0.0);
+	  BoutReal tisheath = floor(Ti(x, y, z), 0.0);
+	
+	  // Zero-gradient potential
+	  BoutReal phisheath = phi(x, y, z);
+	
+	  // Ion velocity goes to the sound speed. Note negative since out of the domain
+	  BoutReal visheath = -sqrt(tesheath + tisheath);
+
+	  if (bndry_par->dir == 1){
+	    visheath = sqrt(tesheath + tisheath);
+	  }
+	
+	  if (sheath_allow_supersonic && (Vi(x, y, z) < visheath)) {
+	    // If plasma is faster, go to plasma velocity
+	    visheath = Vi(x, y, z);
+	  }
+	
+	  // Sheath current
+	  // Note that phi/Te >= 0.0 since for phi < 0
+	  // vesheath is the electron saturation current
+	  BoutReal phi_te =
+	    floor(phisheath / Telim(x, y, z), 0.0);
+	  BoutReal vesheath = visheath;
+	  
+	  // J = n*(Vi - Ve)
+	  BoutReal jsheath = nesheath * (visheath - vesheath);
+	  if (nesheath < 1e-10) {
+	    vesheath = visheath;
+	    jsheath = 0.0;
+	  }
+
+	  if (bndry_par->dir == 1){
+	    // Apply boundary condition half-way between cells
+	    // Neumann conditions
+	    Ne.yup()(x, y+bndry_par->dir, z) = nesheath;
+	    phi.yup()(x, y+bndry_par->dir, z) = phisheath;
+	    Vort.yup()(x, y+bndry_par->dir, z) = Vort(x, y, z);
+	
+	    // Here zero-gradient Te, heat flux applied later
+	    Te.yup()(x, y+bndry_par->dir, z) = Te(x, y, z);
+	    Ti.yup()(x, y+bndry_par->dir, z) = Ti(x, y, z);
+	
+	    Pe.yup()(x, y+bndry_par->dir, z) = Pe(x, y, z);
+	    Pelim.yup()(x, y+bndry_par->dir, z) = Pelim(x, y, z);
+	    Pi.yup()(x, y+bndry_par->dir, z) = Pi(x, y, z);
+	    Pilim.yup()(x, y+bndry_par->dir, z) = Pilim(x, y, z);
+	
+	    // Dirichlet conditions
+	    Vi.yup()(x, y+bndry_par->dir, z) = 2. * visheath - Vi(x, y, z);
+	    Ve.yup()(x, y+bndry_par->dir, z) = 2. * vesheath - Ve(x, y, z);
+	    Jpar.yup()(x, y+bndry_par->dir, z) =
+	      2. * jsheath - Jpar(x, y, z);
+	    NVi.yup()(x, y+bndry_par->dir, z) =
+	      2. * nesheath * visheath - NVi(x, y, z);
+	  } else if (bndry_par->dir == -1) {
+	    // Apply boundary condition half-way between cells
+	    // Neumann conditions
+	    Ne.ydown()(x, y+bndry_par->dir, z) = nesheath;
+	    phi.ydown()(x, y+bndry_par->dir, z) = phisheath;
+	    Vort.ydown()(x, y+bndry_par->dir, z) = Vort(x, y, z);
+	
+	    // Here zero-gradient Te, heat flux applied later
+	    Te.ydown()(x, y+bndry_par->dir, z) = Te(x, y, z);
+	    Ti.ydown()(x, y+bndry_par->dir, z) = Ti(x, y, z);
+	
+	    Pe.ydown()(x, y+bndry_par->dir, z) = Pe(x, y, z);
+	    Pelim.ydown()(x, y+bndry_par->dir, z) = Pelim(x, y, z);
+	    Pi.ydown()(x, y+bndry_par->dir, z) = Pi(x, y, z);
+	    Pilim.ydown()(x, y+bndry_par->dir, z) = Pilim(x, y, z);
+	
+	    // Dirichlet conditions
+	    Vi.ydown()(x, y+bndry_par->dir, z) = 2. * visheath - Vi(x, y, z);
+	    Ve.ydown()(x, y+bndry_par->dir, z) = 2. * vesheath - Ve(x, y, z);
+	    Jpar.ydown()(x, y+bndry_par->dir, z) =
+	      2. * jsheath - Jpar(x, y, z);
+	    NVi.ydown()(x, y+bndry_par->dir, z) =
+	      2. * nesheath * visheath - NVi(x, y, z);
+	  }
+	}
+      }
+      break;
+    }
     }
   }
   
@@ -3104,12 +3209,15 @@ int Hermes::rhs(BoutReal t) {
 	    BoutReal vesheath = floor(
 				      0.5 * (Ve(x, y, z) + Ve.yup()(x, y + bndry_par->dir, z)),
 				      0.0);
+	    BoutReal tisheath = floor(
+				      0.5 * (Ti(x, y, z) + Ti.yup()(x, y + bndry_par->dir, z)),
+				      0.0);
 	    
 	    // Sound speed (normalised units)
-	    // BoutReal Cs = sqrt(tesheath + tisheath);
+	    BoutReal Cs = sqrt(tesheath + tisheath);
 	    
 	    // Heat flux
-	    BoutReal q = (sheath_gamma_e - 1.5) * tesheath * nesheath * vesheath;
+	    BoutReal q = (sheath_gamma_e - 1.5) * tesheath * nesheath * Cs;//vesheath;
 	    // Multiply by cell area to get power
 	    BoutReal flux =
 	      q
@@ -3134,12 +3242,15 @@ int Hermes::rhs(BoutReal t) {
 	    BoutReal vesheath = floor(
 				      0.5 * (Ve(x, y, z) + Ve.ydown()(x, y + bndry_par->dir, z)),
 				      0.0);
+	    BoutReal tisheath = floor(
+				      0.5 * (Ti(x, y, z) + Ti.ydown()(x, y + bndry_par->dir, z)),
+				      0.0);
 	    
 	    // Sound speed (normalised units)
-	    // BoutReal Cs = sqrt(tesheath + tisheath);
+	    BoutReal Cs = sqrt(tesheath + tisheath);
 	    
 	    // Heat flux
-	    BoutReal q = (sheath_gamma_e - 1.5) * tesheath * nesheath * vesheath;
+	    BoutReal q = (sheath_gamma_e - 1.5) * tesheath * nesheath * Cs;//vesheath;
 	    
 	    // Multiply by cell area to get power
 	    BoutReal flux =

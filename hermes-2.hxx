@@ -132,6 +132,7 @@ private:
   BoutReal anomalous_D;    // Density diffusion
   BoutReal anomalous_chi;  // Electron thermal diffusion
   BoutReal anomalous_nu;   // Momentum diffusion (kinematic viscosity)
+  Field3D a_d3d, a_chi3d, a_nu3d; // 3D coef
 
   bool anomalous_D_nvi; // Include terms in momentum equation
   bool anomalous_D_pepi; // Include terms in Pe, Pi equations
@@ -178,6 +179,7 @@ private:
   int par_sheath_model;  // Sets parallel boundary condition model
   BoutReal electron_weight;  // electron heaviness in units of m_e (for slower boundaries)
   bool par_sheath_ve;
+  Field3D sheath_dpe, sheath_dpi; 
   
   BoundaryRegionPar* bndry_par;
 

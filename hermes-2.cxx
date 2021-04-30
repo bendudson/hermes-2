@@ -2978,7 +2978,7 @@ int Hermes::rhs(BoutReal t) {
 	ddt(VePsi) -= Vi * Grad_par(Ve - Vi); // Parallel advection
       }else{
 	Field3D vdiff = sub_all(Ve,Vi);
-	// mesh->communicate(vdiff);
+	mesh->communicate(vdiff);
 	ddt(VePsi) -= Vi * Grad_par(vdiff); // Parallel advection
       }
       Field3D vdiff = sub_all(Ve,Vi);
@@ -3017,7 +3017,7 @@ int Hermes::rhs(BoutReal t) {
       Field3D max_speed = Bnorm * coord->Bxy / sqrt(SI::mu0 * AA * SI::Mp * Nnorm * Nelim)
                           / Cs0;                      // Alfven speed (normalised by Cs0)
       Field3D elec_sound = sqrt(mi_me) * sound_speed; // Electron sound speed
-      for (auto& i : max_speed.getRegion("RGN_ALL")) {
+      for (auto& i : max_speed.getRegion("RGN_NOBNDRY")) {
         // Maximum of Alfven or thermal electron speed
         if (elec_sound[i] > max_speed[i]) {
           max_speed[i] = elec_sound[i];
@@ -3084,7 +3084,7 @@ int Hermes::rhs(BoutReal t) {
 	ddt(NVi) -= Grad_parP(Pe + Pi);
       }else{
 	Field3D peppi = add_all(Pe,Pi);
-	// mesh->communicate(peppi);
+	mesh->communicate(peppi);
 	ddt(NVi) -= Grad_parP(peppi);
       }
     }
@@ -3369,12 +3369,12 @@ int Hermes::rhs(BoutReal t) {
 	    BoutReal vesheath = floor(
 				      0.5 * (Ve(x, y, z) + Ve.yup()(x, y + bndry_par->dir, z)),
 				      0.0);
-	    BoutReal tisheath = floor(
-				      0.5 * (Ti(x, y, z) + Ti.yup()(x, y + bndry_par->dir, z)),
-				      0.0);
+	    // BoutReal tisheath = floor(
+	    // 			      0.5 * (Ti(x, y, z) + Ti.yup()(x, y + bndry_par->dir, z)),
+	    // 			      0.0);
 	    
 	    // Sound speed (normalised units)
-	    BoutReal Cs = sqrt(tesheath + tisheath);
+	    // BoutReal Cs = sqrt(tesheath + tisheath);
 	    
 	    // Heat flux
 	    BoutReal q = (sheath_gamma_e - 1.5) * tesheath * nesheath * vesheath;
@@ -3402,12 +3402,12 @@ int Hermes::rhs(BoutReal t) {
 	    BoutReal vesheath = floor(
 				      0.5 * (Ve(x, y, z) + Ve.ydown()(x, y + bndry_par->dir, z)),
 				      0.0);
-	    BoutReal tisheath = floor(
-				      0.5 * (Ti(x, y, z) + Ti.ydown()(x, y + bndry_par->dir, z)),
-				      0.0);
+	    // BoutReal tisheath = floor(
+	    // 			      0.5 * (Ti(x, y, z) + Ti.ydown()(x, y + bndry_par->dir, z)),
+	    // 			      0.0);
 	    
 	    // Sound speed (normalised units)
-	    BoutReal Cs = -sqrt(tesheath + tisheath);
+	    // BoutReal Cs = -sqrt(tesheath + tisheath);
 	    
 	    // Heat flux
 	    BoutReal q = (sheath_gamma_e - 1.5) * tesheath * nesheath * vesheath;
@@ -3462,7 +3462,7 @@ int Hermes::rhs(BoutReal t) {
       Field3D PePi = add_all(Pe, Pi);
       mesh->communicate(nu_rho2);
       Field3D nu_rho2Ne = mul_all(nu_rho2, Ne);
-      // mesh->communicate(nu_rho2Ne,Te);
+      mesh->communicate(nu_rho2Ne,Te);
       ddt(Pe) += (2. / 3)
     	* (FV::Div_a_Laplace_perp(nu_rho2, PePi)
     	   + (11. / 12) * FV::Div_a_Laplace_perp(nu_rho2Ne, Te));
@@ -3659,7 +3659,7 @@ int Hermes::rhs(BoutReal t) {
       // nu_rho2 = (Ti/Te) * nu_ei * rho_e^2 in normalised units
       Field3D nu_rho2 = Tilim / (tau_e * mi_me * SQ(coord->Bxy));
       Field3D PePi = add_all(Pe , Pi);
-      mesh->communicate(nu_rho2);
+      mesh->communicate(nu_rho2,PePi);
       Field3D nu_rho2Ne = mul_all(nu_rho2, Ne);
       mesh->communicate(nu_rho2Ne,Te);
       ddt(Pi) += (5. / 3)
@@ -4364,8 +4364,9 @@ int Hermes::precon(BoutReal t, BoutReal gamma, BoutReal delta) {
 }
 
 const Field3D Hermes::fci_curvature(const Field3D &f) {
-  Field3D result = mul_all(bracket(logB, f, BRACKET_ARAKAWA), bracket_factor);
-  return 2 * result;
+  // Field3D result = mul_all(bracket(logB, f, BRACKET_ARAKAWA), bracket_factor);
+  // mesh->communicate(result);
+  return 2 * bracket(logB, f, BRACKET_ARAKAWA) * bracket_factor;
 }
 
 const Field3D Hermes::Grad_parP(const Field3D &f) {
@@ -4376,7 +4377,7 @@ const Field3D Hermes::Div_parP(const Field3D &f) {
   auto* coords = mesh->getCoordinates();
   Field3D result;
   result.allocate();
-  for(auto &i : f.getRegion("RGN_ALL")) {
+  for(auto &i : f.getRegion("RGN_NOBNDRY")) {
     auto yp = i.yp();
     auto ym = i.ym();
     result[i] = (f.yup()[yp] / coords->Bxy.yup()[yp] - f.ydown()[ym] / coords->Bxy.ydown()[ym])

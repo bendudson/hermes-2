@@ -3119,7 +3119,7 @@ int Hermes::rhs(BoutReal t) {
     }
     
     if (numdiff > 0.0) {
-      for(auto &i : NVi.getRegion("RGN_ALL")) {
+      for(auto &i : NVi.getRegion("RGN_NOY")) {
         ddt(NVi)[i] += numdiff*(Vi.ydown()[i.ym()] - 2.*Vi[i] + Vi.yup()[i.yp()]);
       }
       // ddt(NVi) += numdiff * Div_par_diffusion_index(NVi);
@@ -4376,7 +4376,7 @@ const Field3D Hermes::Div_parP(const Field3D &f) {
   auto* coords = mesh->getCoordinates();
   Field3D result;
   result.allocate();
-  for(auto &i : f.getRegion("RGN_ALL")) {
+  for(auto &i : f.getRegion("RGN_NOY")) {
     auto yp = i.yp();
     auto ym = i.ym();
     result[i] = (f.yup()[yp] / coords->Bxy.yup()[yp] - f.ydown()[ym] / coords->Bxy.ydown()[ym])

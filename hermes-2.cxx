@@ -230,11 +230,18 @@ const Field3D ceil(const Field3D &var, BoutReal f, REGION rgn = RGN_ALL) {
 // Square function for vectors
 Field3D SQ(const Vector3D &v) { return v * v; }
 
+void setRegions(Field3D &f) {
+  f.yup().setRegion("RGN_YPAR_+1");
+  f.ydown().setRegion("RGN_YPAR_-1");
+}
+
 Field3D floor_all(const Field3D &f, BoutReal minval) {
   Field3D result = floor(f, minval);
+  checkData(result, RGN_ALL);
   result.splitParallelSlices();
-  result.yup() = floor(f.yup(), minval);
-  result.ydown() = floor(f.ydown(), minval);
+  result.yup() = floor(f.yup(), minval, "RGN_YPAR_+1");
+  result.ydown() = floor(f.ydown(), minval, "RGN_YPAR_-1");
+  setRegions(result);
   return result;
 }
 
@@ -243,10 +250,13 @@ Field3D copy_all(const Field3D &f) {
   result.splitParallelSlices();
   result.yup() = copy(f.yup());
   result.ydown() = copy(f.ydown());
+  setRegions(result);
   return result;
 }
 
-Field3D div_all(const Field3D &num, const Field3D &den) {
+Field3D div_all(Field3D num, Field3D den) {
+  setRegions(num);
+  setRegions(den);
   Field3D result = num / den;
   result.splitParallelSlices();
   result.yup() = num.yup() / den.yup();
@@ -254,7 +264,8 @@ Field3D div_all(const Field3D &num, const Field3D &den) {
   return result;
 }
 
-Field3D div_all(const Field3D &num, BoutReal den) {
+Field3D div_all(Field3D num, BoutReal den) {
+  setRegions(num);
   Field3D result = num / den;
   result.splitParallelSlices();
   result.yup() = num.yup() / den;
@@ -262,7 +273,9 @@ Field3D div_all(const Field3D &num, BoutReal den) {
   return result;
 }
 
-Field3D mul_all(const Field3D &a, const Field3D &b) {
+Field3D mul_all(Field3D a, Field3D b) {
+  setRegions(a);
+  setRegions(b);
   Field3D result = a * b;
   result.splitParallelSlices();
   result.yup() = a.yup() * b.yup();
@@ -270,7 +283,9 @@ Field3D mul_all(const Field3D &a, const Field3D &b) {
   return result;
 }
 
-Field3D sub_all(const Field3D &a, const Field3D &b) {
+Field3D sub_all(Field3D a, Field3D b) {
+  setRegions(a);
+  setRegions(b);
   Field3D result = a - b;
   result.splitParallelSlices();
   result.yup() = a.yup() - b.yup();
@@ -278,7 +293,9 @@ Field3D sub_all(const Field3D &a, const Field3D &b) {
   return result;
 }
 
-Field3D add_all(const Field3D &a, const Field3D &b) {
+Field3D add_all(Field3D a, Field3D b) {
+  setRegions(a);
+  setRegions(b);
   Field3D result = a + b;
   result.splitParallelSlices();
   result.yup() = a.yup() + b.yup();
@@ -3119,7 +3136,7 @@ int Hermes::rhs(BoutReal t) {
     }
     
     if (numdiff > 0.0) {
-      for(auto &i : NVi.getRegion("RGN_ALL")) {
+      for(auto &i : NVi.getRegion("RGN_NOY")) {
         ddt(NVi)[i] += numdiff*(Vi.ydown()[i.ym()] - 2.*Vi[i] + Vi.yup()[i.yp()]);
       }
       // ddt(NVi) += numdiff * Div_par_diffusion_index(NVi);

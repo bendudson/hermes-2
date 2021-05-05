@@ -208,7 +208,7 @@ poloidal_flows = false
 magnetic_drift = true
 ion_velocity   = true
 
-ion_neutral = 0.0
+ion_neutral = false
 neutral_friction = false  # Friction between plasma and neutrals
 
 boussinesq = true   # Use Boussinesq approximation

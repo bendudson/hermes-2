@@ -1,4 +1,12 @@
 *.o
 *.nc
 BOUT.log.*
-
+.BOUT.pid.*
+BOUT.settings
+/atomicpp.a
+/doc/hermes-2-manual.aux
+/doc/hermes-2-manual.log
+/doc/hermes-2-manual.out
+/doc/hermes-2-manual.pdf
+/hermes-2
+/core*

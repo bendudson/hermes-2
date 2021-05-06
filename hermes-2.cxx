@@ -515,7 +515,7 @@ int Hermes::init(bool restarting) {
 
   OPTION(optsc, AA, 2.0); // Ion mass (2 = Deuterium)
 
-  output.write("Normalisation Te=%e, Ne=%e, B=%e\n", Tnorm, Nnorm, Bnorm);
+  output.write("Normalisation Te={:e}, Ne={:e}, B={:e}\n", Tnorm, Nnorm, Bnorm);
   SAVE_ONCE(Tnorm, Nnorm, Bnorm, AA); // Save
 
   Cs0 = sqrt(qe * Tnorm / (AA * Mp)); // Reference sound speed [m/s]
@@ -529,7 +529,7 @@ int Hermes::init(bool restarting) {
   output.write("\tmi_me={}, beta_e={}\n", mi_me, beta_e);
   SAVE_ONCE(mi_me, beta_e, me_mi);
 
-  output.write("\t Cs=%e, rho_s=%e, Omega_ci=%e\n", Cs0, rho_s0, Omega_ci);
+  output.write("\t Cs={:e}, rho_s={:e}, Omega_ci={:e}\n", Cs0, rho_s0, Omega_ci);
   SAVE_ONCE(Cs0, rho_s0, Omega_ci);
 
   // Collision times
@@ -540,12 +540,12 @@ int Hermes::init(bool restarting) {
   tau_i0 =
       sqrt(AA) / (4.78e-8 * (Nnorm / 1e6) * lambda_ii * pow(Tnorm, -3. / 2));
 
-  output.write("\ttau_e0=%e, tau_i0=%e\n", tau_e0, tau_i0);
+  output.write("\ttau_e0={:e}, tau_i0={:e}\n", tau_e0, tau_i0);
 
   if (anomalous_D > 0.0) {
     // Normalise
     anomalous_D /= rho_s0 * rho_s0 * Omega_ci; // m^2/s
-    output.write("\tnormalised anomalous D_perp = %e\n", anomalous_D);
+    output.write("\tnormalised anomalous D_perp = {:e}\n", anomalous_D);
     a_d3d = anomalous_D;
     mesh->communicate(a_d3d);
 
@@ -553,14 +553,14 @@ int Hermes::init(bool restarting) {
   if (anomalous_chi > 0.0) {
     // Normalise
     anomalous_chi /= rho_s0 * rho_s0 * Omega_ci; // m^2/s
-    output.write("\tnormalised anomalous chi_perp = %e\n", anomalous_chi);
+    output.write("\tnormalised anomalous chi_perp = {:e}\n", anomalous_chi);
     a_chi3d = anomalous_chi;
     mesh->communicate(a_chi3d);
   }
   if (anomalous_nu > 0.0) {
     // Normalise
     anomalous_nu /= rho_s0 * rho_s0 * Omega_ci; // m^2/s
-    output.write("\tnormalised anomalous nu_perp = %e\n", anomalous_nu);
+    output.write("\tnormalised anomalous nu_perp = {:e}\n", anomalous_nu);
     a_nu3d = anomalous_nu;
     mesh->communicate(a_nu3d);
 

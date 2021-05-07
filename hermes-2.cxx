@@ -793,12 +793,18 @@ int Hermes::init(bool restarting) {
     // Note: A Neumann condition simplifies boundary conditions on fluxes
     // where the condition e.g. on J should be on flux (J/B)
     Bxyz.applyParallelBoundary("parallel_neumann");
-    
+    for (auto f: {coord->dz, coord->dy, coord->J, coord->g_22, coord->g_23, coord->g23, coord->Bxy}) {
+      f.applyParallelBoundary("parallel_neumann");
+    }
+    bout::checkPositive(coord->Bxy, "f", "RGN_NOCORNERS");
+    bout::checkPositive(coord->Bxy.yup(), "fyup", "RGN_YPAR_+1");
+    bout::checkPositive(coord->Bxy.ydown(), "fdown", "RGN_YPAR_-1");
     logB = log(Bxyz);
 
     bracket_factor = sqrt(coord->g_22) / (coord->J * Bxyz);
     SAVE_ONCE(bracket_factor);
   }else{
+    mesh->communicate(coord->Bxy);
     bracket_factor = sqrt(coord->g_22) / (coord->J * coord->Bxy);
     SAVE_ONCE(bracket_factor);
   }
@@ -1112,7 +1118,6 @@ int Hermes::init(bool restarting) {
   }
   // Magnetic field in boundary
   auto& Bxy = mesh->getCoordinates()->Bxy;
-  mesh->communicate(Bxy);
 
   for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
     for (int jz = 0; jz < mesh->LocalNz; jz++) {

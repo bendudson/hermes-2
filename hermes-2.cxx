@@ -793,9 +793,14 @@ int Hermes::init(bool restarting) {
     // Note: A Neumann condition simplifies boundary conditions on fluxes
     // where the condition e.g. on J should be on flux (J/B)
     Bxyz.applyParallelBoundary("parallel_neumann");
-    for (auto f: {coord->dz, coord->dy, coord->J, coord->g_22, coord->g_23, coord->g23, coord->Bxy}) {
-      f.applyParallelBoundary("parallel_neumann");
-    }
+    coord->dz.applyParallelBoundary("parallel_neumann");
+    coord->dy.applyParallelBoundary("parallel_neumann");
+    coord->J.applyParallelBoundary("parallel_neumann");
+    coord->g_22.applyParallelBoundary("parallel_neumann");
+    coord->g_23.applyParallelBoundary("parallel_neumann");
+    coord->g23.applyParallelBoundary("parallel_neumann");
+    coord->Bxy.applyParallelBoundary("parallel_neumann");
+
     bout::checkPositive(coord->Bxy, "f", "RGN_NOCORNERS");
     bout::checkPositive(coord->Bxy.yup(), "fyup", "RGN_YPAR_+1");
     bout::checkPositive(coord->Bxy.ydown(), "fdown", "RGN_YPAR_-1");

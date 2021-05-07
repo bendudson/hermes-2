@@ -1165,6 +1165,8 @@ int Hermes::rhs(BoutReal t) {
   // Note: Parallel slices are not calculated because parallel derivatives
   // are calculated using field aligned quantities
   mesh->communicate(EvolvingVars);
+  Ne.applyParallelBoundary();
+
 
   Field3D Nelim = floor_all(Ne, 1e-5);
   
@@ -1173,6 +1175,7 @@ int Hermes::rhs(BoutReal t) {
   }
   
   Te = div_all(Pe, Nelim);
+  NVi.applyParallelBoundary();
   Vi = div_all(NVi, Nelim);
 
   Telim = floor_all(Te, 0.1 / Tnorm);
@@ -2646,6 +2649,7 @@ int Hermes::rhs(BoutReal t) {
     }else{
       Field3D neve = mul_all(Ne,Ve);
       mesh->communicate(neve);
+      neve.applyParallelBoundary("parallel_neumann"); // CHECK?
       ddt(Ne) -= Div_parP(neve);
       // b = Div_parP(neve);
       // Skew-symmetric form
@@ -3099,7 +3103,7 @@ int Hermes::rhs(BoutReal t) {
     }else{
       Field3D nvivi = mul_all(NVi, Vi);
       mesh->communicate(nvivi);
-
+      nvivi.applyParallelBoundary("parallel_neumann"); // CHECK?
       ddt(NVi) -= Div_parP(nvivi);
       // Skew-symmetric form
       // ddt(NVi) -= 0.5 * (Div_par(mul_all(NVi, Vi)) + Vi * Grad_par(NVi) + NVi * Div_par(Vi));
@@ -3112,6 +3116,7 @@ int Hermes::rhs(BoutReal t) {
       }else{
 	Field3D peppi = add_all(Pe,Pi);
 	mesh->communicate(peppi);
+	peppi.applyParallelBoundary("parallel_neumann");
 	ddt(NVi) -= Grad_parP(peppi);
       }
     }

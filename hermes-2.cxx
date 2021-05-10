@@ -230,11 +230,18 @@ const Field3D ceil(const Field3D &var, BoutReal f, REGION rgn = RGN_ALL) {
 // Square function for vectors
 Field3D SQ(const Vector3D &v) { return v * v; }
 
+void setRegions(Field3D &f) {
+  f.yup().setRegion("RGN_YPAR_+1");
+  f.ydown().setRegion("RGN_YPAR_-1");
+}
+
 Field3D floor_all(const Field3D &f, BoutReal minval) {
   Field3D result = floor(f, minval);
+  checkData(result, RGN_ALL);
   result.splitParallelSlices();
-  result.yup() = floor(f.yup(), minval);
-  result.ydown() = floor(f.ydown(), minval);
+  result.yup() = floor(f.yup(), minval, "RGN_YPAR_+1");
+  result.ydown() = floor(f.ydown(), minval, "RGN_YPAR_-1");
+  setRegions(result);
   return result;
 }
 
@@ -243,10 +250,13 @@ Field3D copy_all(const Field3D &f) {
   result.splitParallelSlices();
   result.yup() = copy(f.yup());
   result.ydown() = copy(f.ydown());
+  setRegions(result);
   return result;
 }
 
-Field3D div_all(const Field3D &num, const Field3D &den) {
+Field3D div_all(Field3D num, Field3D den) {
+  setRegions(num);
+  setRegions(den);
   Field3D result = num / den;
   result.splitParallelSlices();
   result.yup() = num.yup() / den.yup();
@@ -254,7 +264,8 @@ Field3D div_all(const Field3D &num, const Field3D &den) {
   return result;
 }
 
-Field3D div_all(const Field3D &num, BoutReal den) {
+Field3D div_all(Field3D num, BoutReal den) {
+  setRegions(num);
   Field3D result = num / den;
   result.splitParallelSlices();
   result.yup() = num.yup() / den;
@@ -262,7 +273,9 @@ Field3D div_all(const Field3D &num, BoutReal den) {
   return result;
 }
 
-Field3D mul_all(const Field3D &a, const Field3D &b) {
+Field3D mul_all(Field3D a, Field3D b) {
+  setRegions(a);
+  setRegions(b);
   Field3D result = a * b;
   result.splitParallelSlices();
   result.yup() = a.yup() * b.yup();
@@ -270,7 +283,9 @@ Field3D mul_all(const Field3D &a, const Field3D &b) {
   return result;
 }
 
-Field3D sub_all(const Field3D &a, const Field3D &b) {
+Field3D sub_all(Field3D a, Field3D b) {
+  setRegions(a);
+  setRegions(b);
   Field3D result = a - b;
   result.splitParallelSlices();
   result.yup() = a.yup() - b.yup();
@@ -278,7 +293,9 @@ Field3D sub_all(const Field3D &a, const Field3D &b) {
   return result;
 }
 
-Field3D add_all(const Field3D &a, const Field3D &b) {
+Field3D add_all(Field3D a, Field3D b) {
+  setRegions(a);
+  setRegions(b);
   Field3D result = a + b;
   result.splitParallelSlices();
   result.yup() = a.yup() + b.yup();
@@ -498,7 +515,7 @@ int Hermes::init(bool restarting) {
 
   OPTION(optsc, AA, 2.0); // Ion mass (2 = Deuterium)
 
-  output.write("Normalisation Te=%e, Ne=%e, B=%e\n", Tnorm, Nnorm, Bnorm);
+  output.write("Normalisation Te={:e}, Ne={:e}, B={:e}\n", Tnorm, Nnorm, Bnorm);
   SAVE_ONCE(Tnorm, Nnorm, Bnorm, AA); // Save
 
   Cs0 = sqrt(qe * Tnorm / (AA * Mp)); // Reference sound speed [m/s]
@@ -512,7 +529,7 @@ int Hermes::init(bool restarting) {
   output.write("\tmi_me={}, beta_e={}\n", mi_me, beta_e);
   SAVE_ONCE(mi_me, beta_e, me_mi);
 
-  output.write("\t Cs=%e, rho_s=%e, Omega_ci=%e\n", Cs0, rho_s0, Omega_ci);
+  output.write("\t Cs={:e}, rho_s={:e}, Omega_ci={:e}\n", Cs0, rho_s0, Omega_ci);
   SAVE_ONCE(Cs0, rho_s0, Omega_ci);
 
   // Collision times
@@ -523,12 +540,12 @@ int Hermes::init(bool restarting) {
   tau_i0 =
       sqrt(AA) / (4.78e-8 * (Nnorm / 1e6) * lambda_ii * pow(Tnorm, -3. / 2));
 
-  output.write("\ttau_e0=%e, tau_i0=%e\n", tau_e0, tau_i0);
+  output.write("\ttau_e0={:e}, tau_i0={:e}\n", tau_e0, tau_i0);
 
   if (anomalous_D > 0.0) {
     // Normalise
     anomalous_D /= rho_s0 * rho_s0 * Omega_ci; // m^2/s
-    output.write("\tnormalised anomalous D_perp = %e\n", anomalous_D);
+    output.write("\tnormalised anomalous D_perp = {:e}\n", anomalous_D);
     a_d3d = anomalous_D;
     mesh->communicate(a_d3d);
 
@@ -536,14 +553,14 @@ int Hermes::init(bool restarting) {
   if (anomalous_chi > 0.0) {
     // Normalise
     anomalous_chi /= rho_s0 * rho_s0 * Omega_ci; // m^2/s
-    output.write("\tnormalised anomalous chi_perp = %e\n", anomalous_chi);
+    output.write("\tnormalised anomalous chi_perp = {:e}\n", anomalous_chi);
     a_chi3d = anomalous_chi;
     mesh->communicate(a_chi3d);
   }
   if (anomalous_nu > 0.0) {
     // Normalise
     anomalous_nu /= rho_s0 * rho_s0 * Omega_ci; // m^2/s
-    output.write("\tnormalised anomalous nu_perp = %e\n", anomalous_nu);
+    output.write("\tnormalised anomalous nu_perp = {:e}\n", anomalous_nu);
     a_nu3d = anomalous_nu;
     mesh->communicate(a_nu3d);
 
@@ -776,12 +793,23 @@ int Hermes::init(bool restarting) {
     // Note: A Neumann condition simplifies boundary conditions on fluxes
     // where the condition e.g. on J should be on flux (J/B)
     Bxyz.applyParallelBoundary("parallel_neumann");
-    
+    coord->dz.applyParallelBoundary("parallel_neumann");
+    coord->dy.applyParallelBoundary("parallel_neumann");
+    coord->J.applyParallelBoundary("parallel_neumann");
+    coord->g_22.applyParallelBoundary("parallel_neumann");
+    coord->g_23.applyParallelBoundary("parallel_neumann");
+    coord->g23.applyParallelBoundary("parallel_neumann");
+    coord->Bxy.applyParallelBoundary("parallel_neumann");
+
+    bout::checkPositive(coord->Bxy, "f", "RGN_NOCORNERS");
+    bout::checkPositive(coord->Bxy.yup(), "fyup", "RGN_YPAR_+1");
+    bout::checkPositive(coord->Bxy.ydown(), "fdown", "RGN_YPAR_-1");
     logB = log(Bxyz);
 
     bracket_factor = sqrt(coord->g_22) / (coord->J * Bxyz);
     SAVE_ONCE(bracket_factor);
   }else{
+    mesh->communicate(coord->Bxy);
     bracket_factor = sqrt(coord->g_22) / (coord->J * coord->Bxy);
     SAVE_ONCE(bracket_factor);
   }
@@ -1095,7 +1123,6 @@ int Hermes::init(bool restarting) {
   }
   // Magnetic field in boundary
   auto& Bxy = mesh->getCoordinates()->Bxy;
-  mesh->communicate(Bxy);
 
   for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
     for (int jz = 0; jz < mesh->LocalNz; jz++) {
@@ -1138,6 +1165,8 @@ int Hermes::rhs(BoutReal t) {
   // Note: Parallel slices are not calculated because parallel derivatives
   // are calculated using field aligned quantities
   mesh->communicate(EvolvingVars);
+  Ne.applyParallelBoundary();
+
 
   Field3D Nelim = floor_all(Ne, 1e-5);
   
@@ -1146,6 +1175,7 @@ int Hermes::rhs(BoutReal t) {
   }
   
   Te = div_all(Pe, Nelim);
+  NVi.applyParallelBoundary();
   Vi = div_all(NVi, Nelim);
 
   Telim = floor_all(Te, 0.1 / Tnorm);
@@ -2619,6 +2649,7 @@ int Hermes::rhs(BoutReal t) {
     }else{
       Field3D neve = mul_all(Ne,Ve);
       mesh->communicate(neve);
+      neve.applyParallelBoundary("parallel_neumann"); // CHECK?
       ddt(Ne) -= Div_parP(neve);
       // b = Div_parP(neve);
       // Skew-symmetric form
@@ -3072,7 +3103,7 @@ int Hermes::rhs(BoutReal t) {
     }else{
       Field3D nvivi = mul_all(NVi, Vi);
       mesh->communicate(nvivi);
-
+      nvivi.applyParallelBoundary("parallel_neumann"); // CHECK?
       ddt(NVi) -= Div_parP(nvivi);
       // Skew-symmetric form
       // ddt(NVi) -= 0.5 * (Div_par(mul_all(NVi, Vi)) + Vi * Grad_par(NVi) + NVi * Div_par(Vi));
@@ -3085,6 +3116,7 @@ int Hermes::rhs(BoutReal t) {
       }else{
 	Field3D peppi = add_all(Pe,Pi);
 	mesh->communicate(peppi);
+	peppi.applyParallelBoundary("parallel_neumann");
 	ddt(NVi) -= Grad_parP(peppi);
       }
     }
@@ -3119,7 +3151,7 @@ int Hermes::rhs(BoutReal t) {
     }
     
     if (numdiff > 0.0) {
-      for(auto &i : NVi.getRegion("RGN_ALL")) {
+      for(auto &i : NVi.getRegion("RGN_NOY")) {
         ddt(NVi)[i] += numdiff*(Vi.ydown()[i.ym()] - 2.*Vi[i] + Vi.yup()[i.yp()]);
       }
       // ddt(NVi) += numdiff * Div_par_diffusion_index(NVi);

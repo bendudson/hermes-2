@@ -1137,7 +1137,7 @@ int Hermes::rhs(BoutReal t) {
   // Communicate evolving variables
   // Note: Parallel slices are not calculated because parallel derivatives
   // are calculated using field aligned quantities
-  // mesh->communicate(EvolvingVars);
+  mesh->communicate(EvolvingVars);
 
   Field3D Nelim = floor_all(Ne, 1e-5);
   

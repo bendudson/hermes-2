@@ -55,14 +55,14 @@ const Field3D Div_par_diffusion_index(const Field3D &f, bool bndry_flux) {
             continue;
         }
         BoutReal J =
-	  0.5 * (coord->J(i, j, k) + coord->J(i, j + 1, k)); // Jacobian at boundary
+	  0.5 * (coord->J(i, j, k) + coord->J.yup()(i, j + 1, k)); // Jacobian at boundary
 
-        BoutReal gradient = f(i, j + 1, k) - f(i, j, k);
+        BoutReal gradient = f.yup()(i, j + 1, k) - f(i, j, k);
 
         BoutReal flux = J * gradient;
 
         result(i, j, k) += flux / coord->J(i, j, k);
-        result(i, j + 1, k) -= flux / coord->J(i, j + 1, k);
+        result.yup()(i, j + 1, k) -= flux / coord->J.yup()(i, j + 1, k);
       }
   return result;
 }

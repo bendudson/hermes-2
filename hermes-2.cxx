@@ -230,11 +230,38 @@ const Field3D ceil(const Field3D &var, BoutReal f, REGION rgn = RGN_ALL) {
 // Square function for vectors
 Field3D SQ(const Vector3D &v) { return v * v; }
 
+/// Limited free gradient of log of a quantity
+/// This ensures that the guard cell values remain positive
+/// while also ensuring that the quantity never increases
+///
+///  fm  fc | fp
+///         ^ boundary
+///
+/// exp( 2*log(fc) - log(fm) )
+///
+
+// void setRegions(Field3D &f) {
+//   f.yup().setRegion("RGN_YPAR_+1");
+//   f.ydown().setRegion("RGN_YPAR_-1");
+// }
+
+BoutReal limitFree(BoutReal fm, BoutReal fc) {
+  if (fm < fc) {
+    return fc; // Neumann rather than increasing into boundary
+  }
+  BoutReal fp = SQ(fc) / fm;
+  ASSERT2(std::isfinite(fp));
+
+  return fp;
+}
+
 Field3D floor_all(const Field3D &f, BoutReal minval) {
   Field3D result = floor(f, minval);
+  checkData(result, RGN_ALL);
   result.splitParallelSlices();
-  result.yup() = floor(f.yup(), minval);
-  result.ydown() = floor(f.ydown(), minval);
+  result.yup() = floor(f.yup(), minval);//, "RGN_YPAR_+1");
+  result.ydown() = floor(f.ydown(), minval);//, "RGN_YPAR_-1");
+  // setRegions(result);
   return result;
 }
 
@@ -493,6 +520,8 @@ int Hermes::init(bool restarting) {
 
   // Normalisation
   OPTION(optsc, Tnorm, 100);  // Reference temperature [eV]
+  OPTION(optsc, Te0, Tnorm);  // Reference temperature [eV]
+  OPTION(optsc, Ti0, Tnorm);  // Reference temperature [eV]
   OPTION(optsc, Nnorm, 1e19); // Reference density [m^-3]
   OPTION(optsc, Bnorm, 1.0);  // Reference magnetic field [T]
 
@@ -635,7 +664,7 @@ int Hermes::init(bool restarting) {
       SAVE_REPEAT(ddt(Pe));
     }
   } else {
-    Pe = Ne;
+    Pe = Te0*Ne;
   }
   evolve_ti = optsc["evolve_ti"].doc("Evolve ion temperature?")
     .withDefault<bool>(true);
@@ -646,7 +675,7 @@ int Hermes::init(bool restarting) {
       SAVE_REPEAT(ddt(Pi));
     }
   } else {
-    Pi = Ne;
+    Pi = Ti0*Ne;
   }
 
   evolve_vort = optsc["evolve_vort"].doc("Evolve Vorticity?")
@@ -776,12 +805,23 @@ int Hermes::init(bool restarting) {
     // Note: A Neumann condition simplifies boundary conditions on fluxes
     // where the condition e.g. on J should be on flux (J/B)
     Bxyz.applyParallelBoundary("parallel_neumann");
-    
+    coord->dz.applyParallelBoundary("parallel_neumann");
+    coord->dy.applyParallelBoundary("parallel_neumann");
+    coord->J.applyParallelBoundary("parallel_neumann");
+    coord->g_22.applyParallelBoundary("parallel_neumann");
+    coord->g_23.applyParallelBoundary("parallel_neumann");
+    coord->g23.applyParallelBoundary("parallel_neumann");
+    coord->Bxy.applyParallelBoundary("parallel_neumann");
+    // bout::checkPositive(coord->Bxy, "f", "RGN_NOCORNERS");
+    // bout::checkPositive(coord->Bxy.yup(), "fyup", "RGN_YPAR_+1");
+    // bout::checkPositive(coord->Bxy.ydown(), "fdown", "RGN_YPAR_-1");
     logB = log(Bxyz);
-
+    mesh->communicate(logB);
+    
     bracket_factor = sqrt(coord->g_22) / (coord->J * Bxyz);
     SAVE_ONCE(bracket_factor);
   }else{
+    mesh->communicate(coord->Bxy);
     bracket_factor = sqrt(coord->g_22) / (coord->J * coord->Bxy);
     SAVE_ONCE(bracket_factor);
   }
@@ -995,7 +1035,7 @@ int Hermes::init(bool restarting) {
 	// Test new LaplaceXZ solver
 	newSolver = LaplaceXZ::create(bout::globals::mesh);
 	// Set coefficients for Boussinesq solve
-	newSolver->setCoefs(Field3D(1.0), Field3D(0.0));
+	newSolver->setCoefs(1. / SQ(coord->Bxy), Field3D(0.0));
       } else {
 	// Use older Laplacian solver
 	phiSolver = Laplacian::create(&opt["phiSolver"]);
@@ -1142,7 +1182,10 @@ int Hermes::rhs(BoutReal t) {
   Field3D Nelim = floor_all(Ne, 1e-5);
   
   if (!evolve_te) {
-    Pe = copy_all(Nelim);  // Fixed electron temperature
+    Pe = Te0*copy_all(Nelim);  // Fixed ion temperature
+    Pe.splitParallelSlices();
+    Pe.yup() = Te0*Nelim.yup();
+    Pe.ydown() = Te0*Nelim.ydown();
   }
   
   Te = div_all(Pe, Nelim);
@@ -1153,7 +1196,13 @@ int Hermes::rhs(BoutReal t) {
   Field3D Pelim = mul_all(Telim, Nelim);
 
   if (!evolve_ti) {
-    Pi = copy_all(Nelim);  // Fixed ion temperature
+    if (Ti0 > 1.0){
+      throw BoutException("Hot-ions for isothermal simulation!");
+    }
+    Pi = Ti0*copy_all(Nelim);  // Fixed ion temperature
+    Pi.splitParallelSlices();
+    Pi.yup() = Ti0*Nelim.yup();
+    Pi.ydown() = Ti0*Nelim.ydown();
   }
   
   Ti = div_all(Pi, Nelim);
@@ -1436,7 +1485,7 @@ int Hermes::rhs(BoutReal t) {
         }
         
         // Hot ion term in vorticity
-        phi -= Pi;
+	phi -= Pi;
 
       } else {
         ////////////////////////////////////////////
@@ -2084,106 +2133,6 @@ int Hermes::rhs(BoutReal t) {
 	    NVi.ydown()(x, y+bndry_par->dir, z) =
 	      2. * nesheath * visheath - NVi(x, y, z);
 	  }
-	  // // Zero-gradient density
-	  // BoutReal nesheath = floor(Ne(x, y, z), 0.0);
-
-	  // // Temperature at the sheath entrance
-	  // BoutReal tesheath = floor(Te(x, y, z), 0.0);
-	  // BoutReal tisheath = floor(Ti(x, y, z), 0.0);
-	
-	  // // Zero-gradient potential
-	  // BoutReal phisheath = phi(x, y, z);
-	
-	  // // Ion velocity goes to the sound speed. Note negative since out of the domain
-	  // BoutReal visheath = -sqrt(tesheath + tisheath);
-
-	  // if (sheath_allow_supersonic && (Vi(x, y, z) < visheath)) {
-	  //   // If plasma is faster, go to plasma velocity
-	  //   visheath = Vi(x, y, z);
-	  // }
-
-	  // if (bndry_par->dir == 1){
-	  //   visheath = sqrt(tesheath + tisheath);
-	    	
-	  //   if (sheath_allow_supersonic && (Vi(x, y, z) > visheath)) {
-	  //     // If plasma is faster, go to plasma velocity
-	  //     visheath = Vi(x, y, z);
-	  //   }
-
-	  // }
-	
-	
-	  // // Sheath current
-	  // // Note that phi/Te >= 0.0 since for phi < 0
-	  // // vesheath is the electron saturation current
-	  // BoutReal phi_te =
-	  //   floor(phisheath / Telim(x, y, z), 0.0);
-
-	  // BoutReal vesheath =
-	  //   -sqrt(tesheath) * (sqrt(mi_me) / (2. * sqrt(PI))) * exp(-phi_te);
-	
-	  // if (bndry_par->dir == 1){
-	  //   vesheath *= -1.;
-	  // }
-	
-	  // // J = n*(Vi - Ve)
-	  // BoutReal jsheath = nesheath * (visheath - vesheath);
-	  // if (nesheath < 1e-10) {
-	  //   vesheath = visheath;
-	  //   jsheath = 0.0;
-	  // }
-
-	  // if (bndry_par->dir == 1){
-	  //   // Apply boundary condition half-way between cells
-	  //   // Neumann conditions
-	  //   Ne.yup()(x, y+bndry_par->dir, z) = nesheath;
-	  //   phi.yup()(x, y+bndry_par->dir, z) = phisheath;
-	  //   Vort.yup()(x, y+bndry_par->dir, z) = Vort(x, y, z);
-	
-	  //   // Here zero-gradient Te, heat flux applied later
-	  //   // Te.yup()(x, y+bndry_par->dir, z) = Te(x, y, z);
-	  //   // Ti.yup()(x, y+bndry_par->dir, z) = Ti(x, y, z);
-	
-	  //   // Pe.yup()(x, y+bndry_par->dir, z) = Pe(x, y, z);
-	  //   // Pelim.yup()(x, y+bndry_par->dir, z) = Pelim(x, y, z);
-	  //   // Pi.yup()(x, y+bndry_par->dir, z) = Pi(x, y, z);
-	  //   // Pilim.yup()(x, y+bndry_par->dir, z) = Pilim(x, y, z);
-	
-	  //   // // Dirichlet conditions
-	  //   // Vi.yup()(x, y+bndry_par->dir, z) = 2. * visheath - Vi(x, y, z);
-	  //   if (par_sheath_ve){
-	  //     Ve.yup()(x, y+bndry_par->dir, z) = 2. * vesheath - Ve(x, y, z);
-	  //   }
-	  //   Jpar.yup()(x, y+bndry_par->dir, z) =
-	  //     2. * jsheath - Jpar(x, y, z);
-	  //   NVi.yup()(x, y+bndry_par->dir, z) =
-	  //     2. * nesheath * visheath - NVi(x, y, z);
-	  // } else if (bndry_par->dir == -1) {
-	  //   // Apply boundary condition half-way between cells
-	  //   // Neumann conditions
-	  //   Ne.ydown()(x, y+bndry_par->dir, z) = nesheath;
-	  //   phi.ydown()(x, y+bndry_par->dir, z) = phisheath;
-	  //   Vort.ydown()(x, y+bndry_par->dir, z) = Vort(x, y, z);
-	
-	  //   // Here zero-gradient Te, heat flux applied later
-	  //   // Te.ydown()(x, y+bndry_par->dir, z) = Te(x, y, z);
-	  //   // Ti.ydown()(x, y+bndry_par->dir, z) = Ti(x, y, z);
-	
-	  //   // Pe.ydown()(x, y+bndry_par->dir, z) = Pe(x, y, z);
-	  //   // Pelim.ydown()(x, y+bndry_par->dir, z) = Pelim(x, y, z);
-	  //   // Pi.ydown()(x, y+bndry_par->dir, z) = Pi(x, y, z);
-	  //   // Pilim.ydown()(x, y+bndry_par->dir, z) = Pilim(x, y, z);
-	
-	  //   // Dirichlet conditions
-	  //   // Vi.ydown()(x, y+bndry_par->dir, z) = 2. * visheath - Vi(x, y, z);
-	  //   if (par_sheath_ve) {
-	  //     Ve.ydown()(x, y+bndry_par->dir, z) = 2. * vesheath - Ve(x, y, z);
-	  //   }
-	  //   Jpar.ydown()(x, y+bndry_par->dir, z) =
-	  //     2. * jsheath - Jpar(x, y, z);
-	  //   NVi.ydown()(x, y+bndry_par->dir, z) =
-	  //     2. * nesheath * visheath - NVi(x, y, z);
-	  // }
 	}
       }
       break;
@@ -2619,6 +2568,8 @@ int Hermes::rhs(BoutReal t) {
     }else{
       Field3D neve = mul_all(Ne,Ve);
       mesh->communicate(neve);
+      // mesh->getParallelTransform().integrateParallelSlices(neve);      
+
       ddt(Ne) -= Div_parP(neve);
       // b = Div_parP(neve);
       // Skew-symmetric form
@@ -2763,7 +2714,9 @@ int Hermes::rhs(BoutReal t) {
       
       // This term is central differencing so that it balances the parallel gradient
       // of the potential in Ohm's law
-      if(fci_transform){mesh->communicate(Jpar);}
+      mesh->communicate(Jpar);
+      // mesh->getParallelTransform().integrateParallelSlices(Jpar);      
+
       ddt(Vort) += Div_parP(Jpar);
       a = Div_parP(Jpar);
     }
@@ -2937,7 +2890,7 @@ int Hermes::rhs(BoutReal t) {
       ddt(VePsi) += mi_me * Grad_parP(phi);
     }
 
-    // Parallel electron pressure
+    // parallel electron pressure
     if (pe_par) {
       if(fci_transform){mesh->communicate(Pelim);}
       ddt(VePsi) -= mi_me * Grad_parP(Pelim) / NelimVe;
@@ -2982,7 +2935,7 @@ int Hermes::rhs(BoutReal t) {
 	ddt(VePsi) -= Vi * Grad_par(vdiff); // Parallel advection
       }
       Field3D vdiff = sub_all(Ve,Vi);
-      // mesh->communicate(vdiff);
+      mesh->communicate(vdiff);
       ddt(VePsi) -= bracket(phi, vdiff, BRACKET_ARAKAWA)*bracket_factor;  // ExB advection
       // Should also have ion polarisation advection here
     }
@@ -3072,6 +3025,7 @@ int Hermes::rhs(BoutReal t) {
     }else{
       Field3D nvivi = mul_all(NVi, Vi);
       mesh->communicate(nvivi);
+      // mesh->getParallelTransform().integrateParallelSlices(nvivi);      
 
       ddt(NVi) -= Div_parP(nvivi);
       // Skew-symmetric form
@@ -3200,7 +3154,13 @@ int Hermes::rhs(BoutReal t) {
       if (fci_transform){
 	Field3D peve = mul_all(Pe,Ve);
 	mesh->communicate(peve);
-	ddt(Pe) -= Div_parP(peve);
+	ddt(Pe) -= (5. / 3) * Div_parP(peve);
+
+	ddt(Pe) += (2. / 3) * Ve * Grad_par(Pe);
+
+	// mesh->getParallelTransform().integrateParallelSlices(peve);      
+
+	// ddt(Pe) -= Div_parP(peve);
       } else { 
 	if (currents) {
           ddt(Pe) -= FV::Div_par(Pe, Ve, sqrt(mi_me) * sound_speed);
@@ -3239,6 +3199,8 @@ int Hermes::rhs(BoutReal t) {
       if (fci_transform) {
         Field3D tejpar = mul_all(Te,Jpar);
         mesh->communicate(tejpar);
+	// mesh->getParallelTransform().integrateParallelSlices(tejpar);      
+
         ddt(Pe) += (2. / 3) * 0.71 * Div_parP(tejpar);
       } else {
         ddt(Pe) += (2. / 3) * 0.71 * Div_par(Te * Jpar);
@@ -3359,6 +3321,14 @@ int Hermes::rhs(BoutReal t) {
 	for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
 	  int x = bndry_par->x; int y = bndry_par->y; int z = bndry_par->z;
 	  if (bndry_par->dir == 1){ // forwards
+	    // Free gradient of log electron density and temperature
+	    // Limited so that the values don't increase into the sheath
+	    // This ensures that the guard cell values remain positive
+	    // exp( 2*log(N[i]) - log(N[ip]) )
+	    Ne.yup()(x, y+bndry_par->dir, z) = limitFree(Ne.ydown()(x, y-1, z), Ne(x, y, z));
+	    Te.yup()(x, y+bndry_par->dir, z) = limitFree(Te.ydown()(x, y-1, z), Te(x, y, z));
+	    Pe.yup()(x, y+bndry_par->dir, z) = limitFree(Pe.ydown()(x, y-1, z), Pe(x, y, z));
+
 	    // Temperature and density at the sheath entrance
 	    BoutReal tesheath = floor(
 				      0.5 * (Te(x, y, z) + Te.yup()(x, y + bndry_par->dir, z)),
@@ -3392,6 +3362,14 @@ int Hermes::rhs(BoutReal t) {
 	    // ddt(Pe)(x, y, z) -= (2. / 3) * power;
 	    sheath_dpe(x, y, z) -= (2. / 3) * power;
 	  } else { // backwards
+	    // Free gradient of log electron density and temperature
+	    // Limited so that the values don't increase into the sheath
+	    // This ensures that the guard cell values remain positive
+	    // exp( 2*log(N[i]) - log(N[ip]) )
+	    Ne.ydown()(x, y+bndry_par->dir, z) = limitFree(Ne.yup()(x, y+1, z), Ne(x, y, z));
+	    Te.ydown()(x, y+bndry_par->dir, z) = limitFree(Te.yup()(x, y+1, z), Te(x, y, z));
+	    Pe.ydown()(x, y+bndry_par->dir, z) = limitFree(Pe.yup()(x, y+1, z), Pe(x, y, z));
+
 	    // Temperature and density at the sheath entrance
 	    BoutReal tesheath = floor(
 				      0.5 * (Te(x, y, z) + Te.ydown()(x, y + bndry_par->dir, z)),
@@ -3444,6 +3422,7 @@ int Hermes::rhs(BoutReal t) {
       // in Ohm's law
       if (fci_transform) {
         mesh->communicate(Ve);
+	// mesh->getParallelTransform().integrateParallelSlices(Ve);      
       }
       ddt(Pe) -= (2. / 3) * Pelim * Div_parP(Ve);
     }
@@ -3576,7 +3555,10 @@ int Hermes::rhs(BoutReal t) {
       if (fci_transform) {
         Field3D pivi = mul_all(Pi,Vi);
         mesh->communicate(pivi);
-        ddt(Pi) -= Div_parP(pivi);
+	// mesh->getParallelTransform().integrateParallelSlices(pivi);      
+        ddt(Pi) -= (5. / 3) * Div_parP(pivi);
+
+	ddt(Pi) += (2. / 3) * Vi * Grad_par(Pi);
       } else {
         ddt(Pi) -= FV::Div_par(Pi, Vi, sound_speed);
       }
@@ -3632,6 +3614,7 @@ int Hermes::rhs(BoutReal t) {
       // in the parallel momentum equation
       if (fci_transform) {
         mesh->communicate(Vi);
+	// mesh->getParallelTransform().integrateParallelSlices(Vi);      
       }
       ddt(Pi) -= (2. / 3) * Pilim * Div_parP(Vi);
     }
@@ -3811,6 +3794,14 @@ int Hermes::rhs(BoutReal t) {
 	for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
 	  int x = bndry_par->x; int y = bndry_par->y; int z = bndry_par->z;
 	  if (bndry_par->dir == 1){ // forwards
+	    // Free gradient of log electron density and ion temperature
+	    // Limited so that the values don't increase into the sheath
+	    // This ensures that the guard cell values remain positive
+	    // exp( 2*log(N[i]) - log(N[ip]) )
+	    Ne.yup()(x, y+bndry_par->dir, z) = limitFree(Ne.ydown()(x, y-1, z), Ne(x, y, z));
+	    Ti.yup()(x, y+bndry_par->dir, z) = limitFree(Ti.ydown()(x, y-1, z), Ti(x, y, z));
+	    Pi.yup()(x, y+bndry_par->dir, z) = limitFree(Pi.ydown()(x, y-1, z), Pi(x, y, z));
+
 	    // Temperature and density at the sheath entrance
 	    BoutReal tisheath = floor(
 	    			      0.5 * (Ti(x, y, z) + Ti.yup()(x, y + bndry_par->dir, z)),
@@ -3848,6 +3839,14 @@ int Hermes::rhs(BoutReal t) {
 	    sheath_dpi(x, y, z) -= (3. / 2) * power;
 	    
 	  } else { // backwards
+	    // Free gradient of log electron density and temperature
+	    // Limited so that the values don't increase into the sheath
+	    // This ensures that the guard cell values remain positive
+	    // exp( 2*log(N[i]) - log(N[ip]) )
+	    Ne.ydown()(x, y+bndry_par->dir, z) = limitFree(Ne.yup()(x, y+1, z), Ne(x, y, z));
+	    Ti.ydown()(x, y+bndry_par->dir, z) = limitFree(Ti.yup()(x, y+1, z), Ti(x, y, z));
+	    Pi.ydown()(x, y+bndry_par->dir, z) = limitFree(Pi.yup()(x, y+1, z), Pi(x, y, z));
+
 	    // // Temperature and density at the sheath entrance
 	    BoutReal tisheath = floor(
 	    			      0.5 * (Ti(x, y, z) + Ti.ydown()(x, y + bndry_par->dir, z)),
@@ -4375,6 +4374,7 @@ const Field3D Hermes::Grad_parP(const Field3D &f) {
 
 const Field3D Hermes::Div_parP(const Field3D &f) {
   auto* coords = mesh->getCoordinates();
+
   Field3D result;
   result.allocate();
   for(auto &i : f.getRegion("RGN_NOBNDRY")) {
@@ -4385,6 +4385,43 @@ const Field3D Hermes::Div_parP(const Field3D &f) {
   }
   return result;
   //return Div_par(f) + 0.5*beta_e*coord->Bxy*bracket(psi, f/coord->Bxy, BRACKET_ARAKAWA);
+}
+
+/// Parallel divergence, using integration over projected cells
+const Field3D Hermes::Div_par_integrate(const Field3D &f) {
+  auto* coords = mesh->getCoordinates();
+
+  Field3D f_B = f / coords->Bxy;
+  
+  f_B.splitParallelSlices();
+  mesh->getParallelTransform().integrateParallelSlices(f_B);
+  
+  // integrateYUpDown replaces all yup/down points, so the boundary conditions
+  // now need to be applied. If Bxyz has neumann parallel boundary conditions
+  // then the boundary condition is simpler since f = 0 gives f_B=0 boundary condition.
+  
+  /// Loop over the mesh boundary regions
+  for (const auto &reg : mesh->getBoundariesPar()) {
+    Field3D &f_B_next = f_B.ynext(reg->dir);
+    const Field3D &f_next = f.ynext(reg->dir);
+    const Field3D &B_next = Bxyz.ynext(reg->dir);
+    
+    for (reg->first(); !reg->isDone(); reg->next()) {
+      f_B_next(reg->x, reg->y+reg->dir, reg->z) =
+	f_next(reg->x, reg->y+reg->dir, reg->z) / B_next(reg->x, reg->y+reg->dir, reg->z);
+    }
+  }
+  
+  Field3D result;
+  result.allocate();
+  Coordinates::FieldMetric inv_dy = 1. / (sqrt(coords->g_22) * coords->dy);
+  // Coordinates *coord = mesh->getCoordinates();
+  
+  for(auto i : result.getRegion("RGN_NOBNDRY")) {
+    result[i] = Bxyz[i] * (f_B.yup()[i.yp()] - f_B.ydown()[i.ym()]) * 0.5 * inv_dy[i];
+  }
+  
+  return result;
 }
 
 // Standard main() function

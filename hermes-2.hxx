@@ -238,7 +238,7 @@ private:
   bool vort_bndry_flux; // Allow flux of vorticity through radial boundaries
   
   // Normalisation parameters
-  BoutReal Tnorm, Nnorm, Bnorm;
+  BoutReal Tnorm, Te0, Ti0, Nnorm, Bnorm;
   BoutReal AA, Cs0, rho_s0, Omega_ci;
   BoutReal mi_me, me_mi, beta_e;
   
@@ -248,6 +248,7 @@ private:
   // Perturbed parallel gradient operators
   const Field3D Grad_parP(const Field3D &f);
   const Field3D Div_parP(const Field3D &f);
+  const Field3D Div_par_integrate(const Field3D &f);
 
   // Electromagnetic solver for finite electron mass case
   bool split_n0_psi;   // Split the n=0 component of Apar (psi)?

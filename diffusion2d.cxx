@@ -112,7 +112,7 @@ void Diffusion2D::precon(BoutReal, BoutReal gamma, BoutReal) {
   // Neutral gas diffusion
   // Solve (1 - gamma*Dnn*Delp2)^{-1} 
   if(!inv) {
-    inv = Laplacian::create();
+    auto inv = Laplacian::create();
     // Zero value outer boundary
     
     inv->setInnerBoundaryFlags(INVERT_DC_GRAD | INVERT_AC_GRAD);

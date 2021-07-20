@@ -4010,7 +4010,7 @@ int Hermes::precon(BoutReal t, BoutReal gamma, BoutReal delta) {
   static InvertPar *inv = NULL;
   if (!inv) {
     // Initialise parallel inversion class
-    inv = InvertPar::Create();
+    auto inv = InvertPar::create();
     inv->setCoefA(1.0);
   }
   if (thermal_conduction) {

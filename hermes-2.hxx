@@ -230,7 +230,8 @@ private:
   // Electromagnetic solver for finite electron mass case
   bool split_n0_psi;   // Split the n=0 component of Apar (psi)?
   //Laplacian *aparSolver;
-  LaplaceXZ *aparSolver;
+  std::unique_ptr<LaplaceXZ> aparSolver{nullptr};
+
   LaplaceXY *aparXY;    // Solves n=0 component
   Field2D psi2D;        // Axisymmetric Psi
   
@@ -245,8 +246,8 @@ private:
   BoutReal phi_boundary_last_update; ///< The last time the boundary was updated
   
   bool newXZsolver; 
-  Laplacian *phiSolver; // Old Laplacian in X-Z
-  LaplaceXZ *newSolver; // New Laplacian in X-Z
+  std::unique_ptr<Laplacian> phiSolver{nullptr}; // Old Laplacian in X-Z
+  std::unique_ptr<LaplaceXZ> newSolver{nullptr}; // New Laplacian in X-Z
 
   // Mesh quantities
   Field2D B32, sqrtB;

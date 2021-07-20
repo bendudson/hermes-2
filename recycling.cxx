@@ -77,9 +77,9 @@ void NeutralRecycling::update(const Field3D &Ne, const Field3D &Te,
       // number of particles lost per dt (flux out times perp volume) [t^-1]
       nlost = bcast_lasty(fluxout * 0.5 *
                           (coord->J(i, mesh->yend) * coord->dx(i, mesh->yend) *
-                               coord->dz / sqrt(coord->g_22(i, mesh->yend)) +
+			   coord->dz(i, mesh->yend) / sqrt(coord->g_22(i, mesh->yend)) +
                            coord->J(i, mesh->yend + 1) *
-                               coord->dx(i, mesh->yend + 1) * coord->dz /
+			   coord->dx(i, mesh->yend + 1) * coord->dz(i, mesh->yend) /
                                sqrt(coord->g_22(i, mesh->yend + 1))));
 
       // Integrate ionization rate over volume to get volume loss rate (simple
@@ -89,7 +89,7 @@ void NeutralRecycling::update(const Field3D &Ne, const Field3D &Te,
         sigma_iz = hydrogen.ionisation(Te(i, j, k) * Tnorm) * Nnorm /
                    Fnorm; // ionization rate [d^3]/[t]
         BoutReal dV = coord->J(i, j) * coord->dx(i, j) * coord->dy(i, j) *
-                      coord->dz; // volume element
+	  coord->dz(i,j); // volume element
         nnexp += Nelim(i, j, k) * sigma_iz * exp(-lambda_int(i, j, k)) *
                  dV; // full integral of density source [d^3]/[t]
       }

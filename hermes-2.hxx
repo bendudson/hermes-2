@@ -183,7 +183,7 @@ private:
   BoutReal z_hyper_viscos, x_hyper_viscos, y_hyper_viscos; // 4th-order derivatives
   bool low_n_diffuse; // Diffusion in parallel direction at low density
   bool low_n_diffuse_perp; // Diffusion in perpendicular direction at low density
-  BoutReal ne_hyper_z, pe_hyper_z; // Hyper-diffusion
+  BoutReal ne_hyper_z, pe_hyper_z, pi_hyper_z; // Hyper-diffusion
   BoutReal scale_num_cs; // Scale numerical sound speed
   BoutReal floor_num_cs; // Apply a floor to the numerical sound speed
   bool vepsi_dissipation; // Dissipation term in VePsi equation
@@ -230,8 +230,8 @@ private:
   // Electromagnetic solver for finite electron mass case
   bool split_n0_psi;   // Split the n=0 component of Apar (psi)?
   //Laplacian *aparSolver;
-  std::unique_ptr<LaplaceXZ> aparSolver{nullptr};
 
+  std::unique_ptr<LaplaceXZ> aparSolver{nullptr};
   LaplaceXY *aparXY;    // Solves n=0 component
   Field2D psi2D;        // Axisymmetric Psi
   
@@ -246,6 +246,7 @@ private:
   BoutReal phi_boundary_last_update; ///< The last time the boundary was updated
   
   bool newXZsolver; 
+
   std::unique_ptr<Laplacian> phiSolver{nullptr}; // Old Laplacian in X-Z
   std::unique_ptr<LaplaceXZ> newSolver{nullptr}; // New Laplacian in X-Z
 

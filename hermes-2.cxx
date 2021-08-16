@@ -359,6 +359,7 @@ int Hermes::init(bool restarting) {
 
   OPTION(optsc, ne_hyper_z, -1.0);
   OPTION(optsc, pe_hyper_z, -1.0);
+  OPTION(optsc, pi_hyper_z, -1.0);
 
   OPTION(optsc, low_n_diffuse, false);
   OPTION(optsc, low_n_diffuse_perp, false);
@@ -701,7 +702,6 @@ int Hermes::init(bool restarting) {
           .doc("Include a fixed fraction carbon impurity. < 0 means none.")
           .withDefault(-1.);
   if (carbon_fraction > 0.0) {
-    SAVE_REPEAT(Rzrad);
     SAVE_ONCE(carbon_fraction);
     carbon_rad = new HutchinsonCarbonRadiation();
   }
@@ -1870,6 +1870,7 @@ int Hermes::rhs(BoutReal t) {
           Vi(r.ind, jy, jz) = -Vi(r.ind, mesh->ystart, jz);
           NVi(r.ind, jy, jz) = -NVi(r.ind, mesh->ystart, jz);
           Ve(r.ind, jy, jz) = -Ve(r.ind, mesh->ystart, jz);
+          VePsi(r.ind, jy, jz) = -VePsi(r.ind, mesh->ystart, jz);
           Jpar(r.ind, jy, jz) = -Jpar(r.ind, mesh->ystart, jz);
         }
       }
@@ -3428,6 +3429,10 @@ int Hermes::rhs(BoutReal t) {
         (2. / 3) * FV::Div_a_Laplace_perp(anomalous_chi * DC(Ne), DC(Ti));
   }
 
+  if (pi_hyper_z > 0.0) {
+    ddt(Pi) -= pi_hyper_z * SQ(SQ(coord->dz)) * D4DZ4(Pi);
+  }
+  
   ///////////////////////////////////
   // Heat transmission through sheath
 
@@ -4007,7 +4012,7 @@ int Hermes::rhs(BoutReal t) {
  * @param[in] delta   Not used here
  */
 int Hermes::precon(BoutReal t, BoutReal gamma, BoutReal delta) {
-  static InvertPar *inv = NULL;
+  static std::unique_ptr<InvertPar> inv;
   if (!inv) {
     // Initialise parallel inversion class
     auto inv = InvertPar::create();

@@ -1,8 +1,8 @@
 
-NOUT = 100
-TIMESTEP = 10
+nout = 100
+timestep = 10
 
-TwistShift = false  # use twist-shift condition?
+twistshift = false  # use twist-shift condition?
 ballooning = false  # ballooning transformation?
 shiftinitial = false
 ShiftWithoutTwist=false
@@ -16,7 +16,7 @@ NXPE=1
 
 dump_format = nc
 
-[restart]
+[restart_files]
 init_missing=true # initialize missing variables on restart?
 
 [mesh]
@@ -57,8 +57,8 @@ upwind = W3
 # type = cvode
 # use_precon = true
 
-ATOL = 1.0e-10  # absolute tolerance
-RTOL = 1.0e-5   # relative tolerance
+atol = 1.0e-10  # absolute tolerance
+rtol = 1.0e-5   # relative tolerance
 mxstep = 1000000  # Maximum internal steps per output
 
 cvode_max_order = 2
@@ -260,7 +260,7 @@ neutral_gamma = 0.0
 nn_floor = 1e-2  # Floor applied when calculating Vn = NVn / Nn
 low_n_equilibriate = -1e-4  # If n < nn_floor, evolve Tn and Vn towards plasma values
 
-[All]
+[all]
 scale = 0.0
 
 bndry_all = neumann_o2

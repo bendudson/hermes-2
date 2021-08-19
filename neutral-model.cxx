@@ -16,6 +16,7 @@ NeutralModel *NeutralModel::create(Solver *solver, Mesh *mesh,
                                    Options &options) {
   // Decide which neutral model to use
   std::string type  = options["type"].withDefault<std::string>("none");
+  options["bulk"].setConditionallyUsed();
 
   if (type == "none") {
     // Neutral model which does nothing

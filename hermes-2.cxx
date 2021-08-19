@@ -1004,6 +1004,8 @@ int Hermes::init(bool restarting) {
     OPTION(optsc, split_n0, false); // Split into n=0 and n~=0
     OPTION(optsc, split_n0_psi, split_n0);
     // Phi solver
+    opt["phiSolver"].setConditionallyUsed();
+    optsc["newXZsolver"].setConditionallyUsed();
     if (phi3d) {
 #ifdef PHISOLVER
       phiSolver3D = Laplace3D::create();
@@ -1136,6 +1138,20 @@ int Hermes::init(bool restarting) {
       Bxy(r.ind, mesh->yend + 1, jz) = Bxy(r.ind, mesh->yend, jz);
     }
   }
+
+  opt["Pn"].setConditionallyUsed();
+  opt["Nn"].setConditionallyUsed();
+  opt["NVn"].setConditionallyUsed();
+  opt["Pe"].setConditionallyUsed();
+  opt["Pi"].setConditionallyUsed();
+  opt["Vn"].setConditionallyUsed();
+  opt["Vn_x"].setConditionallyUsed();
+  opt["Vn_y"].setConditionallyUsed();
+  opt["Vn_z"].setConditionallyUsed();
+  opt["phi"].setConditionallyUsed();
+  opt["phiSolver"].setConditionallyUsed();
+  opt["Vort"].setConditionallyUsed();
+  opt["VePsi"].setConditionallyUsed();
 
   return 0;
 }

@@ -207,7 +207,7 @@ private:
   bool density_inflow;  // Does incoming density have momentum?
   
   bool source_vary_g11; // Multiply source by g11
-  Field2D g11norm;
+  Coordinates::FieldMetric g11norm;
   
   // Boundary fluxes
   
@@ -251,7 +251,7 @@ private:
   std::unique_ptr<LaplaceXZ> newSolver{nullptr}; // New Laplacian in X-Z
 
   // Mesh quantities
-  Field2D B32, sqrtB;
+  Coordinates::FieldMetric B32, sqrtB;
 };
 
 /// Fundamental constants

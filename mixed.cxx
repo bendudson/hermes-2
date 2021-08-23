@@ -272,78 +272,74 @@ void NeutralMixed::update(const Field3D &Ne, const Field3D &Te,
   // Boundary condition on fluxes
   TRACE("Neutral boundary fluxes");
 
-  if (neutral_gamma > 0.0) {
-    if (sheath_ydown) {
-      for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
+  if (sheath_ydown) {
+    for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
+      for (int jz = 0; jz < mesh->LocalNz; jz++) {
 
-          // Loss of thermal energy to the target.
-          // This depends on the reflection coefficient
-          // and is controlled by the option neutral_gamma
-          //         q = neutral_gamma * n * T * cs
+        // Loss of thermal energy to the target.
+        // This depends on the reflection coefficient
+        // and is controlled by the option neutral_gamma
+        //         q = neutral_gamma * n * T * cs
 
-          // Density at the target
-          BoutReal Nnout = 0.5 * (Nn(r.ind, mesh->ystart, jz) +
-                                  Nn(r.ind, mesh->ystart - 1, jz));
-          if (Nnout < 0.0)
-            Nnout = 0.0;
-          // Temperature at the target
-          BoutReal Tnout = 0.5 * (Tn(r.ind, mesh->ystart, jz) +
-                                  Tn(r.ind, mesh->ystart - 1, jz));
-          if (Tnout < 0.0)
-            Tnout = 0.0;
+        // Density at the target
+        BoutReal Nnout = 0.5 * (Nn(r.ind, mesh->ystart, jz) +
+                                Nn(r.ind, mesh->ystart - 1, jz));
+        if (Nnout < 0.0)
+          Nnout = 0.0;
+        // Temperature at the target
+        BoutReal Tnout = 0.5 * (Tn(r.ind, mesh->ystart, jz) +
+                                Tn(r.ind, mesh->ystart - 1, jz));
+        if (Tnout < 0.0)
+          Tnout = 0.0;
 
-          // gamma * n * T * cs
-          BoutReal q = neutral_gamma * Nnout * Tnout * sqrt(Tnout);
-          // Multiply by cell area to get power
-          BoutReal heatflux = q *
-                              (coord->J(r.ind, mesh->ystart) +
-                               coord->J(r.ind, mesh->ystart - 1)) /
-                              (sqrt(coord->g_22(r.ind, mesh->ystart)) +
-                               sqrt(coord->g_22(r.ind, mesh->ystart - 1)));
+        // gamma * n * T * cs
+        BoutReal q = neutral_gamma * Nnout * Tnout * sqrt(Tnout);
+        // Multiply by cell area to get power
+        BoutReal heatflux = q * (coord->J(r.ind, mesh->ystart, jz) +
+                                 coord->J(r.ind, mesh->ystart - 1, jz)) /
+	  (sqrt(coord->g_22(r.ind, mesh->ystart, jz)) +
+	   sqrt(coord->g_22(r.ind, mesh->ystart - 1, jz)));
 
-          // Divide by volume of cell, and multiply by 2/3 to get pressure
-          ddt(Pn)(r.ind, mesh->ystart, jz) -=
-              (2. / 3) * heatflux /
-              (coord->dy(r.ind, mesh->ystart) * coord->J(r.ind, mesh->ystart));
-        }
+        // Divide by volume of cell, and multiply by 2/3 to get pressure
+        ddt(Pn)(r.ind, mesh->ystart, jz) -=
+	  (2. / 3) * heatflux /
+	  (coord->dy(r.ind, mesh->ystart, jz) * coord->J(r.ind, mesh->ystart, jz));
       }
     }
+  }
 
-    if (sheath_yup) {
-      for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
+  if (sheath_yup) {
+    for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
+      for (int jz = 0; jz < mesh->LocalNz; jz++) {
 
-          // Loss of thermal energy to the target.
-          // This depends on the reflection coefficient
-          // and is controlled by the option neutral_gamma
-          //         q = neutral_gamma * n * T * cs
+        // Loss of thermal energy to the target.
+        // This depends on the reflection coefficient
+        // and is controlled by the option neutral_gamma
+        //         q = neutral_gamma * n * T * cs
 
-          // Density at the target
-          BoutReal Nnout =
-              0.5 * (Nn(r.ind, mesh->yend, jz) + Nn(r.ind, mesh->yend + 1, jz));
-          if (Nnout < 0.0)
-            Nnout = 0.0;
-          // Temperature at the target
-          BoutReal Tnout =
-              0.5 * (Tn(r.ind, mesh->yend, jz) + Tn(r.ind, mesh->yend + 1, jz));
-          if (Tnout < 0.0)
-            Tnout = 0.0;
+        // Density at the target
+        BoutReal Nnout =
+            0.5 * (Nn(r.ind, mesh->yend, jz) + Nn(r.ind, mesh->yend + 1, jz));
+        if (Nnout < 0.0)
+          Nnout = 0.0;
+        // Temperature at the target
+        BoutReal Tnout =
+            0.5 * (Tn(r.ind, mesh->yend, jz) + Tn(r.ind, mesh->yend + 1, jz));
+        if (Tnout < 0.0)
+          Tnout = 0.0;
 
-          // gamma * n * T * cs
-          BoutReal q = neutral_gamma * Nnout * Tnout * sqrt(Tnout);
-          // Multiply by cell area to get power
-          BoutReal heatflux =
-              q *
-              (coord->J(r.ind, mesh->yend) + coord->J(r.ind, mesh->yend + 1)) /
-              (sqrt(coord->g_22(r.ind, mesh->yend)) +
-               sqrt(coord->g_22(r.ind, mesh->yend + 1)));
+        // gamma * n * T * cs
+        BoutReal q = neutral_gamma * Nnout * Tnout * sqrt(Tnout);
+        // Multiply by cell area to get power
+        BoutReal heatflux =
+	  q * (coord->J(r.ind, mesh->yend, jz) + coord->J(r.ind, mesh->yend + 1, jz)) /
+	  (sqrt(coord->g_22(r.ind, mesh->yend, jz)) +
+	   sqrt(coord->g_22(r.ind, mesh->yend + 1, jz)));
 
-          // Divide by volume of cell, and multiply by 2/3 to get pressure
-          ddt(Pn)(r.ind, mesh->yend, jz) -=
-              (2. / 3) * heatflux /
-              (coord->dy(r.ind, mesh->yend) * coord->J(r.ind, mesh->yend));
-        }
+        // Divide by volume of cell, and multiply by 2/3 to get pressure
+        ddt(Pn)(r.ind, mesh->yend, jz) -=
+            (2. / 3) * heatflux /
+	  (coord->dy(r.ind, mesh->yend, jz) * coord->J(r.ind, mesh->yend, jz));
       }
     }
   }

@@ -105,9 +105,9 @@ void NeutralModel::neutral_rates(
           Nn_R = 0.0;
 
         // Jacobian (Cross-sectional area)
-        BoutReal J_C = coord->J(i, j),
-                 J_L = 0.5 * (coord->J(i, j - 1) + coord->J(i, j)),
-                 J_R = 0.5 * (coord->J(i, j) + coord->J(i, j + 1));
+        BoutReal J_C = coord->J(i, j, k),
+	  J_L = 0.5 * (coord->J(i, j - 1, k) + coord->J(i, j, k)),
+	  J_R = 0.5 * (coord->J(i, j, k) + coord->J(i, j + 1, k));
 
         ///////////////////////////////////////////
         // Charge exchange

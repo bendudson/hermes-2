@@ -85,24 +85,22 @@ namespace FV {
       }
 
       for (int j = ys; j <= ye; j++) {
-        // Pre-calculate factors which multiply fluxes
-
-        // For right cell boundaries
-        BoutReal common_factor = (coord->J(i, j) + coord->J(i, j + 1)) /
-          (sqrt(coord->g_22(i, j)) + sqrt(coord->g_22(i, j + 1)));
-        
-        BoutReal flux_factor_rc = common_factor / (coord->dy(i, j) * coord->J(i, j));
-        BoutReal flux_factor_rp = common_factor / (coord->dy(i, j + 1) * coord->J(i, j + 1));
-
-        // For left cell boundaries
-        common_factor = (coord->J(i, j) + coord->J(i, j - 1)) /
-          (sqrt(coord->g_22(i, j)) + sqrt(coord->g_22(i, j - 1)));
-
-        BoutReal flux_factor_lc = common_factor / (coord->dy(i, j) * coord->J(i, j));
-        BoutReal flux_factor_lm = common_factor / (coord->dy(i, j - 1) * coord->J(i, j - 1));
-        
         for (int k = 0; k < mesh->LocalNz; k++) {
 
+	  // For right cell boundaries
+	  BoutReal common_factor = (coord->J(i, j, k) + coord->J(i, j + 1, k)) /
+	    (sqrt(coord->g_22(i, j, k)) + sqrt(coord->g_22(i, j + 1, k)));
+	  
+	  BoutReal flux_factor_rc = common_factor / (coord->dy(i, j, k) * coord->J(i, j, k));
+	  BoutReal flux_factor_rp = common_factor / (coord->dy(i, j + 1, k) * coord->J(i, j + 1, k));
+	  
+	  // For left cell boundaries
+	  common_factor = (coord->J(i, j, k) + coord->J(i, j - 1, k)) /
+	    (sqrt(coord->g_22(i, j, k)) + sqrt(coord->g_22(i, j - 1, k)));
+	  
+	  BoutReal flux_factor_lc = common_factor / (coord->dy(i, j, k) * coord->J(i, j, k));
+	  BoutReal flux_factor_lm = common_factor / (coord->dy(i, j - 1, k) * coord->J(i, j - 1, k));
+ 
           ////////////////////////////////////////////
           // Reconstruct f at the cell faces
           // This calculates s.R and s.L for the Right and Left
@@ -877,7 +875,7 @@ int Hermes::init(bool restarting) {
         // Create an XY solver for n=0 component
         laplacexy = new LaplaceXY(mesh);
         // Set coefficients for Boussinesq solve
-        laplacexy->setCoefs(1. / SQ(coord->Bxy), 0.0);
+        laplacexy->setCoefs(1. / SQ(DC(coord->Bxy)), 0.0);
         phi2D = 0.0; // Starting guess
       }
       
@@ -3137,16 +3135,16 @@ int Hermes::rhs(BoutReal t) {
           BoutReal q = (sheath_gamma_e - 1.5) * tesheath * nesheath * Cs;
 
           // Multiply by cell area to get power
-          BoutReal flux = q * (coord->J(r.ind, mesh->yend) +
-                               coord->J(r.ind, mesh->yend + 1)) /
-                          (sqrt(coord->g_22(r.ind, mesh->yend)) +
-                           sqrt(coord->g_22(r.ind, mesh->yend + 1)));
+          BoutReal flux = q * (coord->J(r.ind, mesh->yend, jz) +
+                               coord->J(r.ind, mesh->yend + 1, jz)) /
+	    (sqrt(coord->g_22(r.ind, mesh->yend, jz)) +
+	     sqrt(coord->g_22(r.ind, mesh->yend + 1, jz)));
 
           // Divide by volume of cell, and 2/3 to get pressure
           BoutReal power =
-              flux / (coord->dy(r.ind, mesh->yend) * coord->J(r.ind, mesh->yend));
+	    flux / (coord->dy(r.ind, mesh->yend, jz) * coord->J(r.ind, mesh->yend, jz));
           sheath_dpe(r.ind, mesh->yend, jz) = -(2. / 3) * power;
-          wall_power(r.ind, mesh->yend) += power;
+          wall_power(r.ind, mesh->yend, jz) += power;
         }
       }
       break;
@@ -3188,16 +3186,16 @@ int Hermes::rhs(BoutReal t) {
               (sheath_gamma_e - 1.5) * tesheath * nesheath * Cs; // NB: positive
 
           // Multiply by cell area to get power
-          BoutReal flux = q * (coord->J(r.ind, mesh->ystart) +
-                               coord->J(r.ind, mesh->ystart - 1)) /
-                          (sqrt(coord->g_22(r.ind, mesh->ystart)) +
-                           sqrt(coord->g_22(r.ind, mesh->ystart - 1)));
+          BoutReal flux = q * (coord->J(r.ind, mesh->ystart, jz) +
+                               coord->J(r.ind, mesh->ystart - 1, jz)) /
+	    (sqrt(coord->g_22(r.ind, mesh->ystart, jz)) +
+	     sqrt(coord->g_22(r.ind, mesh->ystart - 1, jz)));
 
           // Divide by volume of cell, and 2/3 to get pressure
-          BoutReal power = flux / (coord->dy(r.ind, mesh->ystart) *
-                                   coord->J(r.ind, mesh->ystart));
+          BoutReal power = flux / (coord->dy(r.ind, mesh->ystart, jz) *
+                                   coord->J(r.ind, mesh->ystart, jz));
           sheath_dpe(r.ind, mesh->ystart, jz) = -(2. / 3) * power;
-          wall_power(r.ind, mesh->ystart) += power;
+          wall_power(r.ind, mesh->ystart, jz) += power;
         }
       }
       break;
@@ -3466,16 +3464,16 @@ int Hermes::rhs(BoutReal t) {
           BoutReal q = (sheath_gamma_i - 1.5) * tisheath * nesheath * Cs;
 
           // Multiply by cell area to get power
-          BoutReal flux = q * (coord->J(r.ind, mesh->yend) +
-                               coord->J(r.ind, mesh->yend + 1)) /
-                          (sqrt(coord->g_22(r.ind, mesh->yend)) +
-                           sqrt(coord->g_22(r.ind, mesh->yend + 1)));
+          BoutReal flux = q * (coord->J(r.ind, mesh->yend, jz) +
+                               coord->J(r.ind, mesh->yend + 1, jz)) /
+	    (sqrt(coord->g_22(r.ind, mesh->yend, jz)) +
+	     sqrt(coord->g_22(r.ind, mesh->yend + 1, jz)));
 
           // Divide by volume of cell, and 2/3 to get pressure
           BoutReal power =
-              flux / (coord->dy(r.ind, mesh->yend) * coord->J(r.ind, mesh->yend));
+	    flux / (coord->dy(r.ind, mesh->yend, jz) * coord->J(r.ind, mesh->yend, jz));
           sheath_dpi(r.ind, mesh->yend, jz) = -(2. / 3) * power;
-          wall_power(r.ind, mesh->yend) += power;
+          wall_power(r.ind, mesh->yend, jz) += power;
         }
       }
       break;
@@ -3516,16 +3514,16 @@ int Hermes::rhs(BoutReal t) {
           BoutReal q = (sheath_gamma_i - 1.5) * tisheath * nesheath * Cs;
 
           // Multiply by cell area to get power
-          BoutReal flux = q * (coord->J(r.ind, mesh->ystart) +
-                               coord->J(r.ind, mesh->ystart - 1)) /
-                          (sqrt(coord->g_22(r.ind, mesh->ystart)) +
-                           sqrt(coord->g_22(r.ind, mesh->ystart - 1)));
+          BoutReal flux = q * (coord->J(r.ind, mesh->ystart, jz) +
+                               coord->J(r.ind, mesh->ystart - 1, jz)) /
+	    (sqrt(coord->g_22(r.ind, mesh->ystart, jz)) +
+	     sqrt(coord->g_22(r.ind, mesh->ystart - 1, jz)));
 
           // Divide by volume of cell, and 2/3 to get pressure
-          BoutReal power = flux / (coord->dy(r.ind, mesh->ystart) *
-                                   coord->J(r.ind, mesh->ystart));
+          BoutReal power = flux / (coord->dy(r.ind, mesh->ystart, jz) *
+                                   coord->J(r.ind, mesh->ystart, jz));
           sheath_dpi(r.ind, mesh->ystart, jz) = -(2. / 3) * power;
-          wall_power(r.ind, mesh->ystart) += power;
+          wall_power(r.ind, mesh->ystart, jz) += power;
         }
       }
       break;
@@ -3664,18 +3662,18 @@ int Hermes::rhs(BoutReal t) {
         BoutReal D = radial_buffer_D * (1. - pos / radial_inner_width);
 
         for (int j = mesh->ystart; j <= mesh->yend; ++j) {
-          BoutReal dx = coord->dx(i, j);
-          BoutReal dx_xp = coord->dx(i + 1, j);
-          BoutReal J = coord->J(i, j);
-          BoutReal J_xp = coord->J(i + 1, j);
-
-          // Calculate metric factors for radial fluxes
-          BoutReal rad_flux_factor = 0.25 * (J + J_xp) * (dx + dx_xp);
-          BoutReal x_factor = rad_flux_factor / (J * dx);
-          BoutReal xp_factor = rad_flux_factor / (J_xp * dx_xp);
-
           for (int k = 0; k < ncz; ++k) {
-            // Relax towards constant value on flux surface
+	    BoutReal dx = coord->dx(i, j, k);
+	    BoutReal dx_xp = coord->dx(i + 1, j, k);
+	    BoutReal J = coord->J(i, j, k);
+	    BoutReal J_xp = coord->J(i + 1, j, k);
+
+	    // Calculate metric factors for radial fluxes
+	    BoutReal rad_flux_factor = 0.25 * (J + J_xp) * (dx + dx_xp);
+	    BoutReal x_factor = rad_flux_factor / (J * dx);
+	    BoutReal xp_factor = rad_flux_factor / (J_xp * dx_xp);
+
+	    // Relax towards constant value on flux surface
             ddt(Pe)(i, j, k) -= D * (Pe(i, j, k) - PeInner(i, j));
             ddt(Pi)(i, j, k) -= D * (Pi(i, j, k) - PiInner(i, j));
             ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeInner(i, j));
@@ -3727,17 +3725,17 @@ int Hermes::rhs(BoutReal t) {
         BoutReal D = radial_buffer_D * (1. - pos / radial_outer_width);
 
         for (int j = mesh->ystart; j <= mesh->yend; ++j) {
-          BoutReal dx = coord->dx(i, j);
-          BoutReal dx_xp = coord->dx(i + 1, j);
-          BoutReal J = coord->J(i, j);
-          BoutReal J_xp = coord->J(i + 1, j);
-
-          // Calculate metric factors for radial fluxes
-          BoutReal rad_flux_factor = 0.25 * (J + J_xp) * (dx + dx_xp);
-          BoutReal x_factor = rad_flux_factor / (J * dx);
-          BoutReal xp_factor = rad_flux_factor / (J_xp * dx_xp);
-
           for (int k = 0; k < ncz; ++k) {
+	    BoutReal dx = coord->dx(i, j, k);
+	    BoutReal dx_xp = coord->dx(i + 1, j, k);
+	    BoutReal J = coord->J(i, j, k);
+	    BoutReal J_xp = coord->J(i + 1, j, k);
+	    
+	    // Calculate metric factors for radial fluxes
+	    BoutReal rad_flux_factor = 0.25 * (J + J_xp) * (dx + dx_xp);
+	    BoutReal x_factor = rad_flux_factor / (J * dx);
+	    BoutReal xp_factor = rad_flux_factor / (J_xp * dx_xp);
+
             ddt(Pe)(i, j, k) -= D * (Pe(i, j, k) - PeDC(i, j));
             ddt(Pi)(i, j, k) -= D * (Pi(i, j, k) - PiDC(i, j));
             ddt(Ne)(i, j, k) -= D * (Ne(i, j, k) - NeDC(i, j));
@@ -3803,14 +3801,14 @@ int Hermes::rhs(BoutReal t) {
 
           // Flow of neutrals inwards
           BoutReal flow = frecycle * flux_ion *
-                          (coord->J(r.ind, mesh->ystart) +
-                           coord->J(r.ind, mesh->ystart - 1)) /
-                          (sqrt(coord->g_22(r.ind, mesh->ystart)) +
-                           sqrt(coord->g_22(r.ind, mesh->ystart - 1)));
+	    (coord->J(r.ind, mesh->ystart, jz) +
+	     coord->J(r.ind, mesh->ystart - 1, jz)) /
+	    (sqrt(coord->g_22(r.ind, mesh->ystart, jz)) +
+	     sqrt(coord->g_22(r.ind, mesh->ystart - 1, jz)));
 
           // Rate of change of neutrals in final cell
-          BoutReal dndt = flow / (coord->J(r.ind, mesh->ystart) *
-                                  coord->dy(r.ind, mesh->ystart));
+          BoutReal dndt = flow / (coord->J(r.ind, mesh->ystart, jz) *
+                                  coord->dy(r.ind, mesh->ystart, jz));
 
           // Add mass, momentum and energy to the neutrals
 
@@ -3821,7 +3819,7 @@ int Hermes::rhs(BoutReal t) {
                                 dndt * neutral_vwall * sqrt(3.5 / Tnorm));
 
           // Power deposited onto the wall due to surface recombination
-          wall_power(r.ind, mesh->ystart) += (13.6 / Tnorm) * dndt;
+          wall_power(r.ind, mesh->ystart, jz) += (13.6 / Tnorm) * dndt;
         }
       }
     }
@@ -3840,14 +3838,14 @@ int Hermes::rhs(BoutReal t) {
               0.5 * (Ve(r.ind, mesh->yend, jz) + Ve(r.ind, mesh->yend + 1, jz));
 
           // Flow of neutrals inwards
-          BoutReal flow = flux_ion * (coord->J(r.ind, mesh->yend) +
-                                      coord->J(r.ind, mesh->yend + 1)) /
-                          (sqrt(coord->g_22(r.ind, mesh->yend)) +
-                           sqrt(coord->g_22(r.ind, mesh->yend + 1)));
+          BoutReal flow = flux_ion * (coord->J(r.ind, mesh->yend, jz) +
+                                      coord->J(r.ind, mesh->yend + 1, jz)) /
+	    (sqrt(coord->g_22(r.ind, mesh->yend, jz)) +
+	     sqrt(coord->g_22(r.ind, mesh->yend + 1, jz)));
 
           // Rate of change of neutrals in final cell
           BoutReal dndt =
-              flow / (coord->J(r.ind, mesh->yend) * coord->dy(r.ind, mesh->yend));
+	    flow / (coord->J(r.ind, mesh->yend, jz) * coord->dy(r.ind, mesh->yend, jz));
 
           // Add mass, momentum and energy to the neutrals
 
@@ -3858,7 +3856,7 @@ int Hermes::rhs(BoutReal t) {
                                 -dndt * neutral_vwall * sqrt(3.5 / Tnorm));
 
           // Power deposited onto the wall due to surface recombination
-          wall_power(r.ind, mesh->yend) += (13.6 / Tnorm) * dndt;
+          wall_power(r.ind, mesh->yend, jz) += (13.6 / Tnorm) * dndt;
         }
       }
     }

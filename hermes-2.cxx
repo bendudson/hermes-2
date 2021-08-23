@@ -823,7 +823,7 @@ int Hermes::init(bool restarting) {
     }
   }
   
-  if (Options::root()["mesh"]["paralleltransform"].as<std::string>() == "shifted") {
+  if (Options::root()["mesh"]["paralleltransform:type"].as<std::string>() == "shifted") {
     // Check if the gridfile was created for "shiftedmetric" or for "identity" parallel
     // transform
     std::string gridfile_parallel_transform;

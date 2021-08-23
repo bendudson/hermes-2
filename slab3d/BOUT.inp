@@ -1,9 +1,12 @@
-NOUT = 200     # number of output time-steps
-TIMESTEP = 50  # time between outputs
+nout = 200     # number of output time-steps
+timestep = 50  # time between outputs
 
-ShiftWithoutTwist=true
+ShiftWithoutTwist = true
 
-[restart]
+[input]
+error_on_unused_options=false
+
+[restart_files]
 init_missing = true  # Set missing variables to 0 if missing in restarts
 
 [mesh]
@@ -38,7 +41,8 @@ Bxy = sqrt(Bpxy^2 + Btxy^2)
 
 bxcvz = 1./Rxy^2  # Curvature
 
-paralleltransform = shifted
+[mesh:paralleltransform]
+type = shifted
 
 ##################################################
 # derivative methods
@@ -69,8 +73,8 @@ upwind = W3
 type = cvode
 use_precon = true
 
-ATOL = 1.0e-10  # absolute tolerance
-RTOL = 1.0e-5   # relative tolerance
+atol = 1e-10  # absolute tolerance
+rtol = 1e-05   # relative tolerance
 mxstep = 1000000  # Maximum internal steps per output
 
 cvode_max_order = 2
@@ -87,7 +91,7 @@ outer_boundary_flags = 16  # INVERT_SET, setting outer boundary
 pctype = hypre    # Preconditioner
 
 atol = 1e-12
-rtol = 1e-8
+rtol = 1e-08
 
 # Note: These boundary flags should be consistent with phiSolver
 core_bndry_dirichlet = false
@@ -101,7 +105,7 @@ inner_boundary_flags = 0
 outer_boundary_flags = 0
 
 all_terms = true
-nonuniform=true
+nonuniform = true
 
 ###################################################
 # Model settings
@@ -134,31 +138,31 @@ radial_buffer_D = 1     # Damping coefficient in boundary
 #######################
 # Flux limiters
 kappa_limit_alpha = 0.2 # SOLPS style heat flux limiter
-eta_limit_alpha   = 0.5 # SOLPS style viscosity limiter
+eta_limit_alpha = 0.5 # SOLPS style viscosity limiter
 
 #######################
 # Electric field and Ohm's law
 electromagnetic = true  # Electromagnetic? Otherwise electrostatic
-FiniteElMass    = true  # Finite electron mass?
+FiniteElMass = true  # Finite electron mass?
 
 # Electrostatic potential
 split_n0 = false  # Solve n=0 electrostatic potential separately?
 split_n0_psi = false  # Solve n=0 Apar component separately?
 
 phi_boundary_relax = true  # Relax the boundary towards zero gradient
-phi_boundary_timescale = 1e-5  # Timescale for relaxation [seconds]
+phi_boundary_timescale = 1e-05  # Timescale for relaxation [seconds]
 
 #######################
 # Terms included in the model
 
 # NOTE: all currents switched off for fluid run
-j_diamag       = true  # Diamagnetic current: Vort <-> Pe
-j_par          = true  # Parallel current:    Vort <-> Psi
+j_diamag = true  # Diamagnetic current: Vort <-> Pe
+j_par = true  # Parallel current:    Vort <-> Psi
 
-pe_par         = true  # Parallel pressure gradient: Pe <-> Psi
-resistivity    = true  # Resistivity: Psi -> Pe
-thermal_flux   = true
-thermal_force  = true
+pe_par = true  # Parallel pressure gradient: Pe <-> Psi
+resistivity = true  # Resistivity: Psi -> Pe
+thermal_flux = true
+thermal_force = true
 electron_viscosity = true
 ion_viscosity = false     # Viscous terms in vorticity equation
 ion_viscosity_par = true  # Parallel diffusion of ion momentum
@@ -200,13 +204,13 @@ sheath_gamma_i = 2.5 # Ion sheath heat transmission
 core_sources = false # Only sources in the core
 adapt_source = false   # Feedback on profiles (PI controller)
 energy_source = true   # Constant power per particle (at fixed x). False -> Constant power per volume
-source_p = 1e-2       # Rate based on current error (1/timescale)
-source_i = 1e-6       # Integral of error (1/timescale^2)
+source_p = 0.01       # Rate based on current error (1/timescale)
+source_i = 1e-06       # Integral of error (1/timescale^2)
 source_vary_g11 = false  # Vary source in poloidal angle to better match radial transport
 
 #######################
 # Normalisation factors
-Nnorm = 1e20
+Nnorm = 1e+20
 Tnorm = 100
 Bnorm = 1
 AA = 2  # Atomic mass. 1 = Hydrogen, 2 = Deuterium
@@ -220,10 +224,10 @@ bulk = 0       # Bulk (volume) viscosity
 conduction = 1
 neutral_gamma = 0.0  # Sheath heat transmission
 
-nn_floor = 1e-2  # Floor applied when calculating Vn = NVn / Nn
-low_n_equilibriate = -1e-4  # If n < nn_floor, evolve Tn and Vn towards plasma values
+nn_floor = 0.01  # Floor applied when calculating Vn = NVn / Nn
+low_n_equilibriate = -0.0001  # If n < nn_floor, evolve Tn and Vn towards plasma values
 
-[All]
+[all]
 scale = 0.0
 
 bndry_all = neumann_o2
@@ -241,7 +245,7 @@ function = 0
 
 [VePsi] # Ve + 0.5*beta_e*mi_me*psi
 bndry_core = zerolaplace
-bndry_pf   = dirichlet_o2
+bndry_pf = dirichlet_o2
 bndry_xout = dirichlet_o2
 
 [Pe]  # Electron pressure
@@ -256,8 +260,6 @@ function = 0.01
 
 source = 1e4 * H(x-0.5) * exp(-(x-0.5)/0.2) * H(0.2 - y/(2π))
 
-[Ve]
-
 [phi]
 # Radial boundaries determined by Laplacian inversion
 bndry_all = none
@@ -266,7 +268,7 @@ bndry_ydown = neumann
 
 [Nn]   # Neutral density
 
-scale = 5e-2
+scale = 0.05
 function = 1
 bndry_all = neumann_o2
 
@@ -294,11 +296,10 @@ bndry_all = dirichlet_o2
 
 [Pn]  # Neutral pressure
 
-scale = 1e-5
+scale = 1e-05
 function = 1
 
 bndry_all = neumann_o2
 
 [NVn]
 bndry_all = dirichlet_o2
-

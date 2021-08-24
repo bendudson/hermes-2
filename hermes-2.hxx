@@ -56,7 +56,7 @@ private:
   Field3D VePsi;      // Combination of Ve and psi
   Field3D Vort;       // Vorticity
   Field3D NVi;        // Parallel momentum
-
+  Field3D phi_1;
   FieldGroup EvolvingVars;
 
   // Auxilliary variables
@@ -66,6 +66,17 @@ private:
   Field3D psi;        // Electromagnetic potential (-A_||)
   Field3D phi;        // Electrostatic potential
   
+  //stuff for Pauls thesis (relaxation and geometry)
+  //Field3D phi_1;	      // Auxilary potential for relaxation method
+  Field3D shear;
+  Field3D curv_g;
+  Field3D curv_n;
+  BoutReal lambda_0, lambda_2;
+  bool relaxation;
+  Field3D term_pi;
+  Field3D term_phi; //Debugging
+
+
   // Limited variables
   Field3D Telim, Tilim;
 
@@ -98,15 +109,19 @@ private:
   
   // Switches
   bool evolve_plasma;   // Should plasma be evolved?
+  bool show_timesteps;  // Show intermediate timesteps?
+  bool evolve_te;       // Evolve electron temperature?
+  bool evolve_ti;       // Evolve ion temperature?
+  bool evolve_vort;     // Evolve vorticity?
   
   bool electromagnetic; // Include magnetic potential psi
   bool FiniteElMass;    // Finite Electron Mass
   
   bool j_diamag;    // Diamagnetic current: Vort <-> Pe
-  FieldGeneratorPtr  j_diamag_scale_generator; // Time-varying diamagnetic current scaling
-  BoutReal j_diamag_scale;    // Diamagnetic current scaling factor.
   bool j_par;       // Parallel current:    Vort <-> Psi
-  bool j_pol_terms; // Extra terms in Vort
+  bool j_pol_pi;       // Polarisation current with explicit Pi dependence
+  bool j_pol_simplified;       // Polarisation current with explicit Pi dependence
+  
   bool parallel_flow;
   bool parallel_flow_p_term; // Vi advection terms in Pe, Pi
   bool pe_par;      // Parallel pressure gradient: Pe <-> Psi
@@ -128,6 +143,7 @@ private:
   BoutReal anomalous_D;    // Density diffusion
   BoutReal anomalous_chi;  // Electron thermal diffusion
   BoutReal anomalous_nu;   // Momentum diffusion (kinematic viscosity)
+  Field3D a_d3d, a_chi3d, a_nu3d; // 3D coef
 
   bool anomalous_D_nvi; // Include terms in momentum equation
   bool anomalous_D_pepi; // Include terms in Pe, Pi equations
@@ -135,6 +151,8 @@ private:
   bool ion_velocity;  // Include Vi terms
 
   bool phi3d;         // Use a 3D solver for phi
+  
+  bool staggered;     // Use staggered differencing along B
 
   bool boussinesq;     // Use a fixed density (Nnorm) in the vorticity equation
 
@@ -151,10 +169,13 @@ private:
   bool radial_inner_averagey_nvi; // Average NVi in Y in inner buffer
   bool radial_inner_zero_nvi; // Damp NVi towards zero in inner buffer
 
+  bool phi_smoothing;
+  BoutReal phi_sf;
+  
   BoutReal resistivity_boundary; // Value of nu in boundary layer
   int resistivity_boundary_width; // Width of radial boundary
   
-  Field2D sink_invlpar; // Parallel inverse connection length (1/L_{||}) for
+  Field3D sink_invlpar; // Parallel inverse connection length (1/L_{||}) for
                         // sink terms
   Field2D alpha_dw;
 
@@ -164,6 +185,14 @@ private:
   BoutReal neutral_vwall; // Scale velocity at the wall
   bool sheath_yup, sheath_ydown; 
   bool test_boundaries;
+  bool sheath_allow_supersonic; // If plasma is faster than sound speed, go to plasma velocity
+  bool parallel_sheaths;  
+  int par_sheath_model;  // Sets parallel boundary condition model
+  BoutReal electron_weight;  // electron heaviness in units of m_e (for slower boundaries)
+  bool par_sheath_ve;
+  Field3D sheath_dpe, sheath_dpi; 
+  
+  BoundaryRegionPar* bndry_par;
 
   Field2D wall_flux; // Particle flux to wall (diagnostic)
   Field2D wall_power; // Power flux to wall (diagnostic)
@@ -171,7 +200,7 @@ private:
   // Fix density in SOL
   bool sol_fix_profiles;
   std::shared_ptr<FieldGenerator> sol_ne, sol_te; // Generating functions
-
+  
   // Output switches for additional information
   bool verbose;    // Outputs additional fields, mainly for debugging
   bool output_ddt; // Output time derivatives
@@ -188,37 +217,41 @@ private:
   BoutReal floor_num_cs; // Apply a floor to the numerical sound speed
   bool vepsi_dissipation; // Dissipation term in VePsi equation
   bool vort_dissipation; // Dissipation term in Vorticity equation
-  bool phi_dissipation; // Dissipation term in Vorticity equation, depending on phi
+  bool phi_dissipation; // Dissipation term in Vorticity equation
+
+  BoutReal ne_num_diff;
+  BoutReal ne_num_hyper;
+  BoutReal vi_num_diff; // Numerical perpendicular diffusion
+  BoutReal ve_num_diff; // Numerical perpendicular diffusion
+  BoutReal ve_num_hyper; // Numerical hyper-diffusion
   
   // Sources and profiles
   
   bool ramp_mesh;   // Use Ne,Pe in the grid file for starting ramp target
   BoutReal ramp_timescale; // Length of time for the initial ramp
-  Field2D NeTarget, PeTarget, PiTarget; // For adaptive sources
+  Field3D NeTarget, PeTarget, PiTarget; // For adaptive sources
   
-  bool adapt_source_p; // Use a PI controller to feedback pressure profiles
-  bool adapt_source_n; // Use a PI controller to feedback density profiles
-  bool sources_positive; // Ensure sources > 0
+  bool adapt_source; // Use a PI controller to feedback profiles
   bool core_sources; // Sources only in the core
   bool energy_source; // Add the same amount of energy to each particle
   BoutReal source_p, source_i;  // Proportional-Integral controller
-  Field2D Sn, Spe, Spi; // Sources in density, Pe and Pi
+  Coordinates::FieldMetric Sn, Spe, Spi; // Sources in density, Pe and Pi
   Field3D NeSource, PeSource, PiSource; // Actual sources added
   bool density_inflow;  // Does incoming density have momentum?
   
   bool source_vary_g11; // Multiply source by g11
-  Field2D g11norm;
+  Coordinates::FieldMetric g11norm;
   
   // Boundary fluxes
-  
+
   bool pe_bndry_flux;   // Allow flux of pe through radial boundaries
   bool ne_bndry_flux;   // Allow flux of ne through radial boundaries
   bool vort_bndry_flux; // Allow flux of vorticity through radial boundaries
   
   // Normalisation parameters
-  BoutReal Tnorm, Nnorm, Bnorm;
+  BoutReal Tnorm, Te0, Ti0, Nnorm, Bnorm;
   BoutReal AA, Cs0, rho_s0, Omega_ci;
-  BoutReal mi_me, beta_e;
+  BoutReal mi_me, me_mi, beta_e;
   
   // Curvature, Grad-B drift
   Vector3D Curlb_B; // Curl(b/B)
@@ -226,17 +259,22 @@ private:
   // Perturbed parallel gradient operators
   const Field3D Grad_parP(const Field3D &f);
   const Field3D Div_parP(const Field3D &f);
-  
+  const Field3D Div_par_integrate(const Field3D &f);
+
   // Electromagnetic solver for finite electron mass case
   bool split_n0_psi;   // Split the n=0 component of Apar (psi)?
   //Laplacian *aparSolver;
-  LaplaceXZ *aparSolver;
+  // LaplaceXZ *aparSolver;
+  std::unique_ptr<LaplaceXZ> aparSolver{nullptr};
+
+  // std::unique_ptr<LaplaceXY> aparXY{nullptr};
   LaplaceXY *aparXY;    // Solves n=0 component
   Field2D psi2D;        // Axisymmetric Psi
   
   // Solvers for the electrostatic potential
 
   bool split_n0;        // Split solve into n=0 and n~=0?
+  // std::unique_ptr<LaplaceXY> laplacexy{nullptr};
   LaplaceXY *laplacexy; // Laplacian solver in X-Y (n=0)
   Field2D phi2D;        // Axisymmetric phi
 
@@ -245,11 +283,19 @@ private:
   BoutReal phi_boundary_last_update; ///< The last time the boundary was updated
   
   bool newXZsolver; 
-  Laplacian *phiSolver; // Old Laplacian in X-Z
-  LaplaceXZ *newSolver; // New Laplacian in X-Z
+  std::unique_ptr<Laplacian> phiSolver{nullptr}; // Old Laplacian in X-Z
+  std::unique_ptr<LaplaceXZ> newSolver{nullptr}; // New Laplacian in X-Z
+
 
   // Mesh quantities
-  Field2D B32, sqrtB;
+  Coordinates::FieldMetric B32, sqrtB;
+
+  bool fci_transform;
+  Field3D Bxyz, logB, B_SQ;
+  Field3D bracket_factor;
+  const Field3D fci_curvature(const Field3D &f);
+
+  Field3D a,b,c,d,f; //Debugging variables
 };
 
 /// Fundamental constants

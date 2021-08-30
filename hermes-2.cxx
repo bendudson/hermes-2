@@ -265,7 +265,7 @@ int Hermes::init(bool restarting) {
               .doc("Parallel current:    Vort <-> Psi")
               .withDefault<bool>(true);
 
-  OPTION(optsc, j_pol_terms, false);
+  OPTION(optsc, j_pol_pi, false);
   OPTION(optsc, parallel_flow, true);
   OPTION(optsc, parallel_flow_p_term, parallel_flow);
   OPTION(optsc, pe_par, true);
@@ -2794,23 +2794,27 @@ int Hermes::rhs(BoutReal t) {
     if (boussinesq) {
       TRACE("Vort:boussinesq");
       // Using the Boussinesq approximation
+      if (j_pol_pi){
 
-      ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(0.5 * Vort, phi, vort_bndry_flux,
-                                         poloidal_flows);
+	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(0.5 * Vort, phi, vort_bndry_flux,
+					   poloidal_flows);
 
-      // V_ExB dot Grad(Pi)
-      Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA);
-      vEdotGradPi.applyBoundary("free_o2");
-      // delp2(phi) term
-      Field3D DelpPhi_2B2 = 0.5 * Delp2(phi) / SQ(coord->Bxy);
-      DelpPhi_2B2.applyBoundary("free_o2");
+	// V_ExB dot Grad(Pi)
+	Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA);
+	vEdotGradPi.applyBoundary("free_o2");
+	// delp2(phi) term
+	Field3D DelpPhi_2B2 = 0.5 * Delp2(phi) / SQ(coord->Bxy);
+	DelpPhi_2B2.applyBoundary("free_o2");
 
-      mesh->communicate(vEdotGradPi, DelpPhi_2B2);
+	mesh->communicate(vEdotGradPi, DelpPhi_2B2);
 
-      ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
+	ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
 
-      if (j_pol_terms){
 	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi + Pi, vort_bndry_flux,
+					   poloidal_flows);
+      } else {
+	// use simplified polarization term from i.e. GBS
+	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(Vort, phi, vort_bndry_flux,
 					   poloidal_flows);
       }
 

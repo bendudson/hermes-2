@@ -15,8 +15,7 @@ Author: Ben Dudson, University of York <benjamin.dudson@york.ac.uk>
 
 Released under the GPL license
 
-License
-=======
+## License
 
 Full text of the license is in the file LICENSE. If you are using Hermes-2,
 please cite the relevant papers.
@@ -37,10 +36,39 @@ please cite the relevant papers.
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-Installing BOUT++
-=================
+## Installing
 
-This version works with BOUT++ v4.3 or later
+This version works with the BOUT++ v4.4, currently the master branch.
+Either CMake or Autotools can be used to build it.
+
+### CMake
+
+This is probably the most straightforward method to use now.  First
+configure BOUT++ and Hermes-2. To use the default options and minimal
+dependencies just run:
+
+    $ cmake . -B build
+
+Alternatively the CMake build can be customised: See the [BOUT++
+documentation](https://bout-dev.readthedocs.io/en/latest/user_docs/installing.html#cmake)
+for examples of using `cmake` arguments, or edit the compile options
+interactively before building:
+
+    $ ccmake . -B build
+
+During configuration
+[BOUT++](https://github.com/boutproject/BOUT-dev/) will be
+automatically downloaded as a submodule, together with some
+dependencies (NetCDF and FFTW are assumed to be installed already,
+along with optional dependencies like SUNDIALS and PETSc if they are
+requested).  Once configured, run build to compile BOUT++ and then
+Hermes-3:
+
+    $ cmake --build build
+
+### Autotools
+
+To build and run tests with GNU autoconf and make, first install BOUT++:
 
     git clone https://github.com/boutproject/BOUT-dev.git
     cd BOUT-dev
@@ -58,9 +86,16 @@ or
 
     make
 
-Compiling Hermes
-================
+Then clone the Hermes-2 repository
+
+    git clone https://github.com/bendudson/hermes-2
+
+    cd hermes-2
+
 
 To compile, run "make" and specify the location of BOUT++
-> $ make BOUT_TOP=/path/to/BOUT/
 
+    make BOUT_TOP=/path/to/BOUT-next
+
+This path should be the full path, not relative path, to avoid
+problems with compilation in subdirectories.

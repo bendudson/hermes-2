@@ -1,4 +1,4 @@
 *.o
 *.nc
 BOUT.log.*
-
+*.a

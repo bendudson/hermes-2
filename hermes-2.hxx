@@ -48,6 +48,8 @@ private:
   // Equilibrium current
   Field2D Jpar0;
 
+  BoutReal nesheath_floor; // Density floor used in sheath boundary conditions
+
   // Evolving variables
   Field3D Ne;         // Electron density
   Field3D Pe, Pi;     // Electron and Ion pressures
@@ -101,7 +103,10 @@ private:
   bool FiniteElMass;    // Finite Electron Mass
   
   bool j_diamag;    // Diamagnetic current: Vort <-> Pe
+  FieldGeneratorPtr  j_diamag_scale_generator; // Time-varying diamagnetic current scaling
+  BoutReal j_diamag_scale;    // Diamagnetic current scaling factor.
   bool j_par;       // Parallel current:    Vort <-> Psi
+  bool j_pol_pi;    // Explicit Pi in polarization current
   bool parallel_flow;
   bool parallel_flow_p_term; // Vi advection terms in Pe, Pi
   bool pe_par;      // Parallel pressure gradient: Pe <-> Psi
@@ -110,6 +115,7 @@ private:
   bool thermal_force; // Force due to temperature gradients
   bool electron_viscosity; // Electron parallel viscosity
   bool ion_viscosity;   // Ion viscosity
+  bool ion_viscosity_par; // Parallel part of ion viscosity
   bool electron_neutral;   // Include electron-neutral collisions in resistivity
   bool ion_neutral;        // Include ion-neutral collisions in ion collision time
   bool poloidal_flows;  // Include y derivatives in diamagnetic and ExB drifts
@@ -129,8 +135,6 @@ private:
   bool ion_velocity;  // Include Vi terms
 
   bool phi3d;         // Use a 3D solver for phi
-  
-  bool staggered;     // Use staggered differencing along B
 
   bool boussinesq;     // Use a fixed density (Nnorm) in the vorticity equation
 
@@ -142,6 +146,10 @@ private:
   int radial_inner_width; // Number of points in the inner radial buffer
   int radial_outer_width; // Number of points in the outer radial buffer
   BoutReal radial_buffer_D; // Diffusion in buffer region
+  bool radial_inner_averagey; // Average Ne, Pe, Pi fields in Y in inner radial buffer
+  bool radial_inner_averagey_vort; // Average vorticity in Y in inner buffer
+  bool radial_inner_averagey_nvi; // Average NVi in Y in inner buffer
+  bool radial_inner_zero_nvi; // Damp NVi towards zero in inner buffer
 
   BoutReal resistivity_boundary; // Value of nu in boundary layer
   int resistivity_boundary_width; // Width of radial boundary
@@ -163,7 +171,7 @@ private:
   // Fix density in SOL
   bool sol_fix_profiles;
   std::shared_ptr<FieldGenerator> sol_ne, sol_te; // Generating functions
-  
+
   // Output switches for additional information
   bool verbose;    // Outputs additional fields, mainly for debugging
   bool output_ddt; // Output time derivatives
@@ -180,6 +188,7 @@ private:
   BoutReal floor_num_cs; // Apply a floor to the numerical sound speed
   bool vepsi_dissipation; // Dissipation term in VePsi equation
   bool vort_dissipation; // Dissipation term in Vorticity equation
+  bool phi_dissipation; // Dissipation term in Vorticity equation, depending on phi
   
   // Sources and profiles
   
@@ -187,7 +196,9 @@ private:
   BoutReal ramp_timescale; // Length of time for the initial ramp
   Field2D NeTarget, PeTarget, PiTarget; // For adaptive sources
   
-  bool adapt_source; // Use a PI controller to feedback profiles
+  bool adapt_source_p; // Use a PI controller to feedback pressure profiles
+  bool adapt_source_n; // Use a PI controller to feedback density profiles
+  bool sources_positive; // Ensure sources > 0
   bool core_sources; // Sources only in the core
   bool energy_source; // Add the same amount of energy to each particle
   BoutReal source_p, source_i;  // Proportional-Integral controller
@@ -196,7 +207,7 @@ private:
   bool density_inflow;  // Does incoming density have momentum?
   
   bool source_vary_g11; // Multiply source by g11
-  Field2D g11norm;
+  Coordinates::FieldMetric g11norm;
   
   // Boundary fluxes
   
@@ -219,7 +230,8 @@ private:
   // Electromagnetic solver for finite electron mass case
   bool split_n0_psi;   // Split the n=0 component of Apar (psi)?
   //Laplacian *aparSolver;
-  std::unique_ptr<LaplaceXZ> aparSolver;
+
+  std::unique_ptr<LaplaceXZ> aparSolver{nullptr};
   LaplaceXY *aparXY;    // Solves n=0 component
   Field2D psi2D;        // Axisymmetric Psi
   
@@ -228,13 +240,18 @@ private:
   bool split_n0;        // Split solve into n=0 and n~=0?
   LaplaceXY *laplacexy; // Laplacian solver in X-Y (n=0)
   Field2D phi2D;        // Axisymmetric phi
+
+  bool phi_boundary_relax; ///< Relax the boundary towards Neumann?
+  BoutReal phi_boundary_timescale; ///< Relaxation timescale
+  BoutReal phi_boundary_last_update; ///< The last time the boundary was updated
   
   bool newXZsolver; 
-  std::unique_ptr<Laplacian> phiSolver; // Old Laplacian in X-Z
-  std::unique_ptr<LaplaceXZ> newSolver; // New Laplacian in X-Z
+
+  std::unique_ptr<Laplacian> phiSolver{nullptr}; // Old Laplacian in X-Z
+  std::unique_ptr<LaplaceXZ> newSolver{nullptr}; // New Laplacian in X-Z
 
   // Mesh quantities
-  Field2D B32, sqrtB;
+  Coordinates::FieldMetric B32, sqrtB;
 };
 
 /// Fundamental constants

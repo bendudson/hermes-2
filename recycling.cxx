@@ -27,7 +27,11 @@ void NeutralRecycling::update(const Field3D &Ne, const Field3D &Te,
   TRACE("NeutralRecycling::update");
 
   Coordinates *coord = mesh->getCoordinates();
-  
+
+  Field2D dx2D = DC(coord->dx);
+  Field2D dy2D = DC(coord->dy);
+  Field2D g_222D = DC(coord->g_22);
+  Field2D J2D = DC(coord->J);
   // Lower limit for neutral density (mainly for first time through when Nn = 0)
   Nn = floor(Nn, 1e-8);
 
@@ -44,7 +48,7 @@ void NeutralRecycling::update(const Field3D &Ne, const Field3D &Te,
   static bool first_time = true;
   if (first_time) {
     Field2D ll;
-    ll = CumSumY2D(hthe * coord->dy / Lmax, true);
+    ll = CumSumY2D(hthe * dy2D / Lmax, true);
     Nn = max(Nelim) * exp(-ll);
     first_time = false;
   }
@@ -76,11 +80,11 @@ void NeutralRecycling::update(const Field3D &Ne, const Field3D &Te,
 
       // number of particles lost per dt (flux out times perp volume) [t^-1]
       nlost = bcast_lasty(fluxout * 0.5 *
-                          (coord->J(i, mesh->yend) * coord->dx(i, mesh->yend) *
-                               coord->dz / sqrt(coord->g_22(i, mesh->yend)) +
-                           coord->J(i, mesh->yend + 1) *
-                               coord->dx(i, mesh->yend + 1) * coord->dz /
-                               sqrt(coord->g_22(i, mesh->yend + 1))));
+                          (coord->J(i, mesh->yend, k) * coord->dx(i, mesh->yend, k) *
+			   coord->dz(i, mesh->yend, k) / sqrt(coord->g_22(i, mesh->yend, k)) +
+                           coord->J(i, mesh->yend + 1, k) *
+			   coord->dx(i, mesh->yend + 1, k) * coord->dz(i, mesh->yend, k) /
+			   sqrt(coord->g_22(i, mesh->yend + 1, k))));
 
       // Integrate ionization rate over volume to get volume loss rate (simple
       // integration using trap rule)
@@ -88,8 +92,8 @@ void NeutralRecycling::update(const Field3D &Ne, const Field3D &Te,
       for (int j = mesh->ystart; j <= mesh->yend; j++) {
         sigma_iz = hydrogen.ionisation(Te(i, j, k) * Tnorm) * Nnorm /
                    Fnorm; // ionization rate [d^3]/[t]
-        BoutReal dV = coord->J(i, j) * coord->dx(i, j) * coord->dy(i, j) *
-                      coord->dz; // volume element
+        BoutReal dV = coord->J(i, j, k) * coord->dx(i, j, k) * coord->dy(i, j, k) *
+	  coord->dz (i, j, k); // volume element
         nnexp += Nelim(i, j, k) * sigma_iz * exp(-lambda_int(i, j, k)) *
                  dV; // full integral of density source [d^3]/[t]
       }

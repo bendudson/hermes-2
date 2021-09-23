@@ -34,7 +34,7 @@ class Hermes;
 #include "neutral-model.hxx"
 
 // OpenADAS interface Atomicpp by T.Body
-#include "atomicpp/ImpuritySpecies.hxx"
+#include "ImpuritySpecies.hxx"
 
 class Hermes : public PhysicsModel {
 public:

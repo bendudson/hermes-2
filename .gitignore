@@ -2,3 +2,7 @@
 *.nc
 BOUT.log.*
 *.a
+*.png
+*.pdf
+*~
+.BOUT.pid*

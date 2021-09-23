@@ -47,13 +47,13 @@ ImpuritySpecies::ImpuritySpecies(string& impurity_symbol_supplied){
 	json j_object = retrieveFromJSON(user_file);
 	auto check_symbol_in_file = j_object.find(impurity_symbol_supplied);
 	if ((check_symbol_in_file != j_object.end())){
-		name                = j_object[impurity_symbol_supplied]["name"];
-		year                = j_object[impurity_symbol_supplied]["year"];
-		has_charge_exchange = j_object[impurity_symbol_supplied]["has_charge_exchange"];
-		atomic_number       = j_object[impurity_symbol_supplied]["atomic_number"];
+          name                = j_object[impurity_symbol_supplied]["name"].get<std::string>();
+          year                = j_object[impurity_symbol_supplied]["year"];
+          has_charge_exchange = j_object[impurity_symbol_supplied]["has_charge_exchange"];
+          atomic_number       = j_object[impurity_symbol_supplied]["atomic_number"];
 	} else {
-		cout << "Error: "<< impurity_symbol_supplied << " not found in " << user_file << "\n";
-		throw invalid_argument( "Key not found in user input file" );
+          cout << "Error: "<< impurity_symbol_supplied << " not found in " << user_file << "\n";
+          throw invalid_argument( "Key not found in user input file" );
 	};
 
 	// Add the JSON files associated with this impurity to its .adas_files_dict attribute where the key is the (extended) process name, which maps to a filename (string)

@@ -20,6 +20,7 @@
 
 */
 #include "hermes-2.hxx"
+#include "revision.hxx"
 
 #include <derivs.hxx>
 #include <field_factory.hxx>
@@ -36,8 +37,8 @@
 
 
 // OpenADAS interface Atomicpp by T.Body
-#include "atomicpp/ImpuritySpecies.hxx"
-#include "atomicpp/Prad.hxx"
+#include "ImpuritySpecies.hxx"
+#include "Prad.hxx"
 
 namespace FV {
   template<typename CellEdges = MC>
@@ -241,6 +242,12 @@ int Hermes::init(bool restarting) {
 
   // Switches in model section
   auto& optsc = opt["Hermes"];
+
+  output.write("\nGit Version of Hermes: %s\n", hermes::version::revision);
+  optsc["revision"] = hermes::version::revision;
+
+  // Save the Hermes version in the output dump files
+  dump.setAttribute("", "HERMES_REVISION", hermes::version::revision);
 
   OPTION(optsc, evolve_plasma, true);
 

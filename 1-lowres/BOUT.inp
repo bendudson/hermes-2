@@ -1,6 +1,6 @@
 
-nout = 100
-timestep = 10
+nout = 10
+timestep = 100
 
 twistshift = false  # use twist-shift condition?
 ballooning = false  # ballooning transformation?
@@ -55,6 +55,7 @@ upwind = W3
 
 # Note: If evolving neutrals, need preconditioning
 # type = cvode
+type = beuler
 # use_precon = true
 
 atol = 1.0e-10  # absolute tolerance
@@ -115,7 +116,8 @@ nonuniform = true
 # general settings for the model
 [input]
 
-transform_from_field_aligned=False
+transform_from_field_aligned = false
+error_on_unused_options = false
 
 [Hermes]
 loadmetric = false
@@ -140,7 +142,7 @@ resistivity_boundary_width = 0
 # Numerical dissipation
 
 vepsi_dissipation = false  # Parallel dissipation on Ve-Vi
-vort_dissipation = false
+vort_dissipation = true # false # Changed 2021-10-25
 numdiff = 0.01
 hyperpar = -1
 
@@ -199,8 +201,8 @@ drift_wave = false
 # Transport coefficients
 classical_diffusion = false  # Collisional diffusion
 
-anomalous_D = -1  # Anomalous density diffusion [m^2/s]
-anomalous_chi = -1 # Anomalous thermal diffusion [m^2/s]
+anomalous_D = 0.2  # Anomalous density diffusion [m^2/s]
+anomalous_chi = 0.6 # Anomalous thermal diffusion [m^2/s]
 anomalous_nu = -1   # Anomalous viscosity
 
 poloidal_flows = false
@@ -266,6 +268,9 @@ scale = 0.0
 bndry_all = neumann_o2
 bndry_xin = neumann_o2
 bndry_xout = neumann_o2
+# Maybe not documented?
+bndry_par_all = parallel_neumann
+
 
 [Ne] # Electron density
 scale = 1
@@ -275,6 +280,8 @@ function = 0.1 + 0.01*gauss(x,0.21)
 #function = 1 + 0.1*gauss(x-0.5, 0.14)*gauss(z-pi/2.,0.14/2.) + 0.1*gauss(x-0.5, 0.14)*gauss(z-pi,0.14/2.) + 0.1*gauss(x-0.5, 0.14)*gauss(z,0.14/2.) + 0.1*gauss(x-0.5, 0.14)*gauss(z-3*pi/2.,0.14/2.)
 
 source = 2.8e3*gauss(x, 0.21)
+bndry_xin = neumann_o2
+#dirichlet(0.1)
 
 [Vort]
 scale=0
@@ -291,12 +298,14 @@ scale = 1
 function = 0.1 + 0.01*cos(z)*(sin(8*pi*x - 30*z)+sin(7*z)+0.5*sin(13*z - 2*pi*x))*gauss(-x,0.21)
 #function = 1 + 1.2*(Ne:function-1)
 source = Ne:source
+# bndry_par_all = parallel_free
 
 [Pi]
 scale = 1
 #function = 1 + 1.2*(Ne:function-1)
 function = 0.1 + 0.01*cos(z)*(sin(8*pi*x - 30*z)+sin(7*z)+0.5*sin(13*z - 2*pi*x))*gauss(-x,0.21)
 source = Ne:source
+# bndry_xin = dirichlet(1)
 
 [Ve]
 parallel_bndry_yup=1

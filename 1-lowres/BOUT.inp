@@ -173,8 +173,10 @@ split_n0_psi = false
 j_diamag       = false  # Diamagnetic current: Vort <-> Pe
 j_par          = false  # Parallel current:    Vort <-> Psi
 
-evolve_te = false
+evolve_te = true
 evolve_ti = false
+
+evolve_vort = false
 
 pe_par         = true  # Parallel pressure gradient: Pe <-> Psi
 resistivity    = true  # Resistivity: Psi -> Pe

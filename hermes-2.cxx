@@ -597,7 +597,7 @@ int Hermes::init(bool restarting) {
   auto& optne = opt["Ne"];
   NeSource = optne["source"].doc("Source term in ddt(Ne)").withDefault(Field3D{0.0});
   NeSource /= Omega_ci;
-  Sn = BoutNaN; //DC(NeSource);
+  Sn = NeSource;
 
   // Inflowing density carries momentum
   OPTION(optne, density_inflow, false);
@@ -605,12 +605,12 @@ int Hermes::init(bool restarting) {
   auto& optpe = opt["Pe"];
   PeSource = optpe["source"].withDefault(Field3D{0.0});
   PeSource /= Omega_ci;
-  Spe = BoutNaN; //DC(PeSource);
+  Spe = PeSource;
 
   auto& optpi = opt["Pi"];
   PiSource = optpi["source"].withDefault(Field3D{0.0});
   PiSource /= Omega_ci;
-  Spi = BoutNaN; //DC(PiSource);
+  Spi = PiSource;
 
   OPTION(optsc, core_sources, false);
   if (core_sources) {

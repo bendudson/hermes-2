@@ -548,7 +548,8 @@ int Hermes::init(bool restarting) {
     output.write("\tnormalised anomalous D_perp = {:e}\n", anomalous_D);
     a_d3d = anomalous_D;
     mesh->communicate(a_d3d);
-
+    a_d3d.yup() = anomalous_D;
+    a_d3d.ydown() = anomalous_D;
   }
   if (anomalous_chi > 0.0) {
     // Normalise
@@ -556,6 +557,8 @@ int Hermes::init(bool restarting) {
     output.write("\tnormalised anomalous chi_perp = {:e}\n", anomalous_chi);
     a_chi3d = anomalous_chi;
     mesh->communicate(a_chi3d);
+    a_chi3d.yup() = anomalous_D;
+    a_chi3d.ydown() = anomalous_D;
   }
   if (anomalous_nu > 0.0) {
     // Normalise
@@ -563,7 +566,8 @@ int Hermes::init(bool restarting) {
     output.write("\tnormalised anomalous nu_perp = {:e}\n", anomalous_nu);
     a_nu3d = anomalous_nu;
     mesh->communicate(a_nu3d);
-
+    a_nu3d.yup() = anomalous_D;
+    a_nu3d.ydown() = anomalous_D;
   }
 
   if (ramp_mesh) {

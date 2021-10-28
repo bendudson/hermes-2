@@ -237,7 +237,7 @@ void setRegions(Field3D &f) {
 
 Field3D floor_all(const Field3D &f, BoutReal minval) {
   Field3D result = floor(f, minval);
-  checkData(result, RGN_ALL);
+  checkData(result, "RGN_ALL");
   result.splitParallelSlices();
   result.yup() = floor(f.yup(), minval, "RGN_YPAR_+1");
   result.ydown() = floor(f.ydown(), minval, "RGN_YPAR_-1");

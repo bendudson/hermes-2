@@ -185,7 +185,7 @@ void NeutralModel::neutral_rates(
             Ne_R * Nn_R * hydrogen.ionisation(Te_R * Tnorm) * Nnorm / Fnorm;
 
         // Excitation
-        if (excitation) {
+        if (h_excitation) {
           /////////////////////////////////////////////////////////
           // Electron-neutral excitation
           // Note: Rates need checking

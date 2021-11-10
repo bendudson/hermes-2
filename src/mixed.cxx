@@ -168,13 +168,13 @@ void NeutralMixed::update(const Field3D &Ne, const Field3D &Te,
   // Atomic processes
   TRACE("Atomic processes");
 
-  Field3D Riz, Rrc, Rcx;
-  neutral_rates(Ne, Te, Ti, Vi, Nn, Tn, Vn, S, F, Qi, Rp, Riz, Rrc, Rcx);
+  Field3D Riz, Rrc, Rcx, Rex;
+  neutral_rates(Ne, Te, Ti, Vi, Nn, Tn, Vn, S, F, Qi, Rp, Riz, Rrc, Rcx, Rex);
 
   // Neutral cross-field diffusion coefficient
   BoutReal neutral_lmax = 0.1 / Lnorm;
   Field3D Rnn = Nn * sqrt(Tn) / neutral_lmax; // Neutral-neutral collisions
-  Dnn = Pnlim / (Riz + Rcx + Rnn);
+  Dnn = Pnlim / (Riz + Rcx + Rnn + Rex);
 
   mesh->communicate(Dnn);
   Dnn.clearParallelSlices();
@@ -254,7 +254,7 @@ void NeutralMixed::update(const Field3D &Ne, const Field3D &Te,
       + FV::Div_par_K_Grad_par((2. / 5) * DnnNn, Vn) // Parallel viscosity
       ;
 
-  Fperp = Rcx + Rrc;
+  Fperp = Rcx + Rrc + Rex;
 
   /////////////////////////////////////////////////////
   // Neutral pressure

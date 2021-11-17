@@ -13,6 +13,9 @@ public:
   void update(const Field3D &Ne, const Field3D &Te, const Field3D &Ti, const Field3D &Vi);
   
   void precon(BoutReal t, BoutReal gamma, BoutReal delta);
+
+  virtual Field3D getDensity() override { return Nn; }
+
 private:
   Field3D Nn;  // Neutral gas density (evolving)
   Field3D Pn;  // Neutral gas pressure (evolving)

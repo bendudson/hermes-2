@@ -23,6 +23,8 @@ Diffusion2D::Diffusion2D(Solver *solver, Mesh*, Options &options) : NeutralModel
 void Diffusion2D::update(const Field3D &Ne, const Field3D &Te, const Field3D &UNUSED(Ti), const Field3D &UNUSED(Vi)) {
   
   mesh->communicate(Nn, Pn);
+  Nn.applyParallelBoundary();
+  Pn.applyParallelBoundary();
   
   Nn = floor(Nn, 1e-8);
   Field3D Tn = Pn / Nn; 
@@ -86,6 +88,8 @@ void Diffusion2D::update(const Field3D &Ne, const Field3D &Te, const Field3D &UN
           + (Eionize/Tnorm) * R_iz; // Ionisation energy
         
       }
+  mesh->communicate(Dnn);
+  Dnn.applyParallelBoundary("parallel_neumann");
   
   // Neutral density
   ddt(Nn) = 

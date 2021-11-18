@@ -64,7 +64,7 @@ namespace FV {
     Coordinates *coord = f_in.getCoordinates();
 
     Field3D result{zeroFrom(f)};
-    
+
     // Only need one guard cell, so no need to communicate fluxes
     // Instead calculate in guard cells to preserve fluxes
     int ys = mesh->ystart-1;
@@ -235,73 +235,33 @@ void setRegions(Field3D &f) {
   f.ydown().setRegion("RGN_YPAR_-1");
 }
 
-Field3D floor_all(const Field3D &f, BoutReal minval) {
-  Field3D result = floor(f, minval);
-  checkData(result, "RGN_ALL");
-  result.splitParallelSlices();
-  result.yup() = floor(f.yup(), minval, "RGN_YPAR_+1");
-  result.ydown() = floor(f.ydown(), minval, "RGN_YPAR_-1");
-  setRegions(result);
-  return result;
-}
+const Field3D &yup(const Field3D &f) { return f.yup(); }
+BoutReal yup(BoutReal f) { return f; };
+const Field3D &ydown(const Field3D &f) { return f.ydown(); }
+BoutReal ydown(BoutReal f) { return f; };
 
 #define DO_ALL(op, name)                                                       \
-  Field3D name##_all(const Field3D &a, const Field3D &b) {                     \
+  template <class A, class B> Field3D name##_all(const A &a, const B &b) {     \
     Field3D result = op(a, b);                                                 \
     checkData(result, "RGN_ALL");                                              \
     result.splitParallelSlices();                                              \
-    result.yup() = op(a.yup(), b.yup());                                       \
-    result.ydown() = op(a.ydown(), b.ydown());                                 \
-    setRegions(result);                                                        \
-    return result;                                                             \
-  }                                                                            \
-  Field3D name##_all(const Field3D &a, const BoutReal b) {                     \
-    Field3D result = op(a, b);                                                 \
-    checkData(result, "RGN_ALL");                                              \
-    result.splitParallelSlices();                                              \
-    result.yup() = op(a.yup(), b);                                             \
-    result.ydown() = op(a.ydown(), b);                                         \
-    setRegions(result);                                                        \
-    return result;                                                             \
-  }                                                                            \
-  Field3D name##_all(BoutReal a, const Field3D &b) {                           \
-    Field3D result = op(a, b);                                                 \
-    checkData(result, "RGN_ALL");                                              \
-    result.splitParallelSlices();                                              \
-    result.yup() = op(a, b.yup());                                             \
-    result.ydown() = op(a, b.ydown());                                         \
+    result.yup() = op(yup(a), yup(b));                                         \
+    result.ydown() = op(ydown(a), ydown(b));                                   \
     setRegions(result);                                                        \
     return result;                                                             \
   }
 
-// DO_ALL(floor, floor)
+DO_ALL(floor, floor)
 DO_ALL(pow, pow)
 
+#undef DO_ALL
 #define DO_ALL(op, name)                                                       \
-  Field3D name##_all(const Field3D &a, const Field3D &b) {                     \
+  template <class A, class B> Field3D name##_all(const A &a, const B &b) {     \
     Field3D result = a op b;                                                   \
     checkData(result, "RGN_ALL");                                              \
     result.splitParallelSlices();                                              \
-    result.yup() = (a.yup() op b.yup());                                       \
-    result.ydown() = (a.ydown() op b.ydown());                                 \
-    setRegions(result);                                                        \
-    return result;                                                             \
-  }                                                                            \
-  Field3D name##_all(const Field3D &a, const BoutReal b) {                     \
-    Field3D result = (a op b);                                                 \
-    checkData(result, "RGN_ALL");                                              \
-    result.splitParallelSlices();                                              \
-    result.yup() = (a.yup() op b);                                             \
-    result.ydown() = (a.ydown() op b);                                         \
-    setRegions(result);                                                        \
-    return result;                                                             \
-  }                                                                            \
-  Field3D name##_all(BoutReal a, const Field3D &b) {                           \
-    Field3D result = (a op b);                                                 \
-    checkData(result, "RGN_ALL");                                              \
-    result.splitParallelSlices();                                              \
-    result.yup() = (a op b.yup());                                             \
-    result.ydown() = (a op b.ydown());                                         \
+    result.yup() = yup(a) op yup(b);                                           \
+    result.ydown() = ydown(a) op ydown(b);                                     \
     setRegions(result);                                                        \
     return result;                                                             \
   }
@@ -311,6 +271,7 @@ DO_ALL(/, div)
 DO_ALL(+, add)
 DO_ALL(-, sub)
 
+#undef DO_ALL
 #define DO_ALL(op)                                                             \
   Field3D op##_all(const Field3D &a) {                                         \
     Field3D result = op(a);                                                    \
@@ -1578,10 +1539,10 @@ int Hermes::rhs(BoutReal t) {
 
         // Ve = (NVi - Delp2(psi)) / Ne;
 	if(fci_transform){
-	  Field3D atmp = 1.0;
-	  mesh->communicate(atmp,psi);
-	  Jpar = FV::Div_a_Laplace_perp(atmp, psi);
-	} else {
+          Field3D one;
+          set_all(one, 1.0);
+          Jpar = FV::Div_a_Laplace_perp(one, psi);
+        } else {
 	  Jpar = FV::Div_a_Laplace_perp(1.0, psi);
 	}
 
@@ -1613,14 +1574,11 @@ int Hermes::rhs(BoutReal t) {
 	}
 
         if (thermal_force) {
-          // if(fci_transform) {mesh->communicate(Te);}
           Ve -= 0.71 * Grad_parP(Te) / nu;
         }
       }
 
       Ve.applyBoundary(t);
-      // Communicate auxilliary variables
-      // mesh->communicate(Ve);
       Field3D neve = mul_all(Ne,Ve);
       Jpar = sub_all(NVi, neve);
     }
@@ -2410,7 +2368,7 @@ int Hermes::rhs(BoutReal t) {
   tau_e = mul_all((Cs0 / rho_s0) * tau_e0, div_all(pow_all(Te, 1.5), Ne));
 
   // Normalised ion-ion collision time
-  tau_i = (Cs0 / rho_s0) * tau_i0 * pow(Ti, 1.5) / Ne;
+  tau_i = mul_all((Cs0 / rho_s0) * tau_i0, div_all(pow_all(Ti, 1.5), Ne));
 
   if (ion_neutral && ( neutrals || (ion_neutral_rate > 0.0))) {
     // Include ion-neutral collisions in collision time
@@ -2418,7 +2376,7 @@ int Hermes::rhs(BoutReal t) {
     Field3D neutral_rate = neutrals ? neutrals->Fperp : ion_neutral_rate;
     
     // Add collision frequencies (1/tau_i + neutral rate)
-    tau_i /= 1.0 + tau_i * neutral_rate;
+    tau_i = div_all(tau_i, add_all(1, mul_all(tau_i, neutral_rate)));
   }
 
   // Collisional damping (normalised)
@@ -2494,7 +2452,7 @@ int Hermes::rhs(BoutReal t) {
   if (thermal_conduction || sinks) {
     // Braginskii expression for electron parallel conduction
     // kappa ~ n * v_th^2 * tau
-    kappa_epar = 3.16 * mi_me * Te * Ne * tau_e;
+    kappa_epar = mul_all(mul_all(mul_all(mul_all(3.16, mi_me), Te), Ne), tau_e);
 
     if (kappa_limit_alpha > 0.0) {
       /*
@@ -2507,7 +2465,7 @@ int Hermes::rhs(BoutReal t) {
        * R.Schneider et al. Contrib. Plasma Phys. 46, No. 1-2, 3 – 191 (2006)
        * DOI 10.1002/ctpp.200610001
        */
-
+      ASSERT0(not fci_transform);
       // Spitzer-Harm heat flux
       Field3D q_SH = kappa_epar * Grad_par(Te);
       Field3D q_fl = kappa_limit_alpha * Ne * Te * sqrt(mi_me * Te);
@@ -2515,17 +2473,16 @@ int Hermes::rhs(BoutReal t) {
       kappa_epar = kappa_epar / (1. + abs(q_SH / q_fl));
 
       // Values of kappa on cell boundaries are needed for fluxes
-      // mesh->communicate(kappa_epar);
       kappa_epar.applyBoundary("dirichlet");
     }
 
     // Ion parallel heat conduction
-    kappa_ipar = 3.9 * Ti * Ne * tau_i;
+    kappa_ipar = mul_all(mul_all(mul_all(3.9, Ti), Ne), tau_i);
 
     // Boundary conditions on heat conduction coefficients
     for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
       for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        ASSERT3(fci_transform == false);
+        ASSERT0(fci_transform == false);
         kappa_epar(r.ind, mesh->ystart - 1, jz) = kappa_epar(r.ind, mesh->ystart, jz);
 	kappa_ipar(r.ind, mesh->ystart - 1, jz) = kappa_ipar(r.ind, mesh->ystart, jz);
       }
@@ -2533,7 +2490,8 @@ int Hermes::rhs(BoutReal t) {
     
     for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
       for (int jz = 0; jz < mesh->LocalNz; jz++) {
-	kappa_epar(r.ind, mesh->yend + 1, jz) = kappa_epar(r.ind, mesh->yend, jz);
+        ASSERT0(fci_transform == false);
+        kappa_epar(r.ind, mesh->yend + 1, jz) = kappa_epar(r.ind, mesh->yend, jz);
 	kappa_ipar(r.ind, mesh->yend + 1, jz) = kappa_ipar(r.ind, mesh->yend, jz);
       }
     }
@@ -2739,15 +2697,16 @@ int Hermes::rhs(BoutReal t) {
     ddt(Ne) += NeTarget / ramp_timescale;
   }
 
+  Field3D TiTediff, tauemimeSQB;
   if (classical_diffusion) {
     // Classical perpendicular diffusion
     // The only term here comes from the resistive drift
-    auto tauemimeSQB = mul_all(mul_all(tau_e, mi_me), B42);
+    tauemimeSQB = mul_all(mul_all(tau_e, mi_me), B42);
     Dn = div_all(add_all(Te, Ti), tauemimeSQB);
     if(fci_transform){
       // TODO: use all versions
       Field3D Ne_tauB2 = div_all(Ne, tauemimeSQB);
-      Field3D TiTediff = sub_all(Ti, mul_all(0.5, Te));
+      TiTediff = sub_all(Ti, mul_all(0.5, Te));
       ddt(Ne) += FV::Div_a_Laplace_perp(Dn, Ne);
       ddt(Ne) += FV::Div_a_Laplace_perp(Ne_tauB2, TiTediff);
     }
@@ -2918,7 +2877,6 @@ int Hermes::rhs(BoutReal t) {
       Field3D tauisqB = tau_i * SQ(coord->Bxy);
 
       Field3D mu = div_all(tilim_3 , tauisqB);
-      if (fci_transform) {mesh->communicate(mu);}
       ddt(Vort) += FV::Div_a_Laplace_perp(mu, Vort);
     }
 
@@ -3010,21 +2968,15 @@ int Hermes::rhs(BoutReal t) {
 
     // Parallel electric field
     if (j_par) {
-      // if(fci_transform){mesh->communicate(phi);}
       ddt(VePsi) += mi_me * Grad_parP(phi);
     }
 
     // Parallel electron pressure
     if (pe_par) {
-      // if(fci_transform){
-      // 	mesh->communicate(Pe);
-      // 	Pe.applyParallelBoundary();
-      // }
       ddt(VePsi) -= mi_me * Grad_parP(Pe) / NeVe;
     }
     
     if (thermal_force) {
-      // if(fci_transform){mesh->communicate(Te);}
       ddt(VePsi) -= mi_me * 0.71 * Grad_parP(Te);
     }
 
@@ -3035,7 +2987,6 @@ int Hermes::rhs(BoutReal t) {
       if (eta_limit_alpha > 0.) {
         // SOLPS-style flux limiter
         // Values of alpha ~ 0.5 typically
-        // if(fci_transform){mesh->communicate(Ve);}
         Field3D q_cl = ve_eta * Grad_par(Ve);           // Collisional value
         Field3D q_fl = eta_limit_alpha * Pe * mi_me; // Flux limit
 
@@ -3044,11 +2995,10 @@ int Hermes::rhs(BoutReal t) {
         if (fci_transform) {
           ASSERT0("not implemented: FCI comm" == nullptr);
         }
-        // mesh->communicate(ve_eta);
-        // ve_eta.applyBoundary("neumann");
+        mesh->communicate(ve_eta);
+        ve_eta.applyBoundary("neumann");
       }
       if(fci_transform){
-        // mesh->communicate(ve_eta,Ve);
         ddt(VePsi) += Div_par_K_Grad_par(ve_eta, Ve);
       }else{
 	ddt(VePsi) += FV::Div_par_K_Grad_par(ve_eta, Ve);
@@ -3172,9 +3122,9 @@ int Hermes::rhs(BoutReal t) {
       // Poloidal flow damping
       if(fci_transform){
 	// The parallel part is solved as a diffusion term
-        Coordinates::FieldMetric sqrtBVi = B12 * Vi;
-        Coordinates::FieldMetric Pitau_i_B = Pi * tau_i / (coord->Bxy);
-	mesh->communicate(sqrtBVi,Pitau_i_B);
+        Coordinates::FieldMetric sqrtBVi = mul_all(B12, Vi);
+        Coordinates::FieldMetric Pitau_i_B =
+            div_all(mul_all(Pi, tau_i), (coord->Bxy));
         ddt(NVi) += 1.28 * B12 * Div_par_K_Grad_par(Pitau_i_B, sqrtBVi);
       }else{
         ddt(NVi) += 1.28 * B12 *
@@ -3184,8 +3134,7 @@ int Hermes::rhs(BoutReal t) {
       if (currents) {
         // Perpendicular part. B32 = B^{3/2}
         // This is only included if ExB flow is included
-	Field3D Piciperp_B32 = Pi_ciperp/B32;
-	mesh->communicate(Piciperp_B32);
+        Field3D Piciperp_B32 = div_all(Pi_ciperp, B32);
         ddt(NVi) -= (2. / 3) * B32 * Grad_par(Piciperp_B32);
       }
     }
@@ -3215,11 +3164,7 @@ int Hermes::rhs(BoutReal t) {
       // Using same cross-field drift as in density equation
       Field3D ViDn = mul_all(Vi,Dn);
       ddt(NVi) += FV::Div_a_Laplace_perp(ViDn, Ne);
-      Field3D NVi_tauB2 = NVi / (tau_e * mi_me * SQ(coord->Bxy));
-      Field3D TiTediff = Ti - 0.5 * Te;
-      mesh->communicate(NVi_tauB2, TiTediff);
-      NVi_tauB2.applyParallelBoundary("parallel_neumann");
-      TiTediff.applyParallelBoundary("parallel_neumann");
+      Field3D NVi_tauB2 = div_all(NVi, tauemimeSQB);
       ddt(NVi) += FV::Div_a_Laplace_perp(NVi_tauB2, TiTediff);
     }
 
@@ -3239,7 +3184,7 @@ int Hermes::rhs(BoutReal t) {
       // Diffusion which kicks in at very low density, in order to
       // help prevent negative density regions
       if(fci_transform){
-        // mesh->communicate(NVi);
+        ASSERT0(false);
         ddt(NVi) += Div_par_K_Grad_par(SQ(coord->dy) * coord->g_22 * 1e-4 / Ne, NVi);
       }else{
 	ddt(NVi) += FV::Div_par_K_Grad_par(SQ(coord->dy) * coord->g_22 * 1e-4 / Ne, NVi);
@@ -3276,11 +3221,7 @@ int Hermes::rhs(BoutReal t) {
     if (parallel_flow_p_term) {
       // Parallel flow
       if (fci_transform){
-        // mesh->communicate(Pe);
-        // Pe.applyParallelBoundary();
         Field3D peve = mul_all(Pe,Ve);
-	//mesh->communicate(peve);
-	//peve->
 	ddt(Pe) -= Div_parP(peve);
       } else { 
 	if (currents) {
@@ -3308,8 +3249,6 @@ int Hermes::rhs(BoutReal t) {
     // Parallel heat conduction
     if (thermal_conduction) {
       if (fci_transform) {
-        mesh->communicate(kappa_epar);
-        kappa_epar.applyParallelBoundary("parallel_neumann");
         check_all(kappa_epar);
         ddt(Pe) += (2. / 3) * Div_par_K_Grad_par(kappa_epar, Te);
       } else {
@@ -3321,7 +3260,6 @@ int Hermes::rhs(BoutReal t) {
       // Parallel heat convection
       if (fci_transform) {
         Field3D tejpar = mul_all(Te,Jpar);
-        // mesh->communicate(tejpar);
         ddt(Pe) += (2. / 3) * 0.71 * Div_parP(tejpar);
       } else {
         ddt(Pe) += (2. / 3) * 0.71 * Div_par(Te * Jpar);
@@ -3516,19 +3454,12 @@ int Hermes::rhs(BoutReal t) {
 
     // Transfer and source terms
     if (thermal_force) {
-      if (fci_transform) {
-        // mesh->communicate(Te);
-      }
       ddt(Pe) -= (2. / 3) * 0.71 * Jpar * Grad_parP(Te);
     }
 
     if (pe_par_p_term) {
       // This term balances energetically the pressure term
       // in Ohm's law
-      if (fci_transform) {
-        // mesh->communicate(Ve);
-        Ve.applyParallelBoundary("parallel_neumann");
-      }
       ddt(Pe) -= (2. / 3) * Pe * Div_parP(Ve);
     }
     if (ramp_mesh && (t < ramp_timescale)) {
@@ -3542,12 +3473,9 @@ int Hermes::rhs(BoutReal t) {
 
       // Combined resistive drift and cross-field heat diffusion
       // nu_rho2 = nu_ei * rho_e^2 in normalised units
-      Field3D nu_rho2 = Te / (tau_e * mi_me * SQ(coord->Bxy));
+      Field3D nu_rho2 = div_all(Te, mul_all(mul_all(tau_e, mi_me), B42));
       Field3D PePi = add_all(Pe, Pi);
-      mesh->communicate(nu_rho2);
-      nu_rho2.applyParallelBoundary("parallel_neumann");
       Field3D nu_rho2Ne = mul_all(nu_rho2, Ne);
-      // mesh->communicate(nu_rho2Ne, Te);
       ddt(Pe) += (2. / 3)
     	* (FV::Div_a_Laplace_perp(nu_rho2, PePi)
     	   + (11. / 12) * FV::Div_a_Laplace_perp(nu_rho2Ne, Te));
@@ -3660,7 +3588,6 @@ int Hermes::rhs(BoutReal t) {
     if (parallel_flow_p_term) {
       if (fci_transform) {
         Field3D pivi = mul_all(Pi,Vi);
-        // mesh->communicate(pivi);
         ddt(Pi) -= Div_parP(pivi);
       } else {
         ddt(Pi) -= FV::Div_par(Pi, Vi, sound_speed);
@@ -3682,8 +3609,6 @@ int Hermes::rhs(BoutReal t) {
       ddt(Pi) -= (2. / 3) * Pi * fci_curvature(phi);
 
       if (fci_transform) {
-        // Vector3D pipecb = (Pi + Pe);
-        // mesh->communicate(pipe);
         ddt(Pi) += Pi * fci_curvature(Pi + Pe);
       } else {
         ddt(Pi) += Pi * Div((Pe + Pi) * Curlb_B);
@@ -3691,9 +3616,6 @@ int Hermes::rhs(BoutReal t) {
     }
 
     if (j_par) {
-      if (fci_transform) {
-        // mesh->communicate(Pi);
-      }
       if (boussinesq) {
         ddt(Pi) -= (2. / 3) * Jpar * Grad_parP(Pi);
       } else {
@@ -3704,9 +3626,6 @@ int Hermes::rhs(BoutReal t) {
     // Parallel heat conduction
     if (thermal_conduction) {
       if (fci_transform) {
-        // mesh->communicate(kappa_ipar, Ti);
-        mesh->communicate(kappa_ipar);
-        kappa_ipar.applyParallelBoundary("parallel_neumann");
         ddt(Pi) += (2. / 3) * Div_par_K_Grad_par(kappa_ipar, Ti);
       } else {
         ddt(Pi) += (2. / 3) * FV::Div_par_K_Grad_par(kappa_ipar, Ti);
@@ -3717,9 +3636,6 @@ int Hermes::rhs(BoutReal t) {
     if (pe_par_p_term) {
       // This term balances energetically the pressure term
       // in the parallel momentum equation
-      if (fci_transform) {
-        // mesh->communicate(Vi);
-      }
       ddt(Pi) -= (2. / 3) * Pi * Div_parP(Vi);
     }
 
@@ -3736,9 +3652,7 @@ int Hermes::rhs(BoutReal t) {
     if (classical_diffusion) {
       // Cross-field heat conduction
       // kappa_perp = 2 * n * nu_ii * rho_i^2
-      Field3D Pi_B2tau = 2. * Pi / (SQ(coord->Bxy) * tau_i);
-      mesh->communicate(Pi_B2tau);
-      Pi_B2tau.applyParallelBoundary("parallel_neumann");
+      Field3D Pi_B2tau = div_all(mul_all(2., Pi), mul_all(B42, tau_i));
       ddt(Pi) +=
           (2. / 3) * FV::Div_a_Laplace_perp(Pi_B2tau, Ti);
 
@@ -4360,6 +4274,7 @@ int Hermes::rhs(BoutReal t) {
 
     ddt(Ne) -= nsink;
 
+    ASSERT0(not fci_transform);
     Field3D conduct = (2. / 3) * kappa_epar * Te * SQ(sink_invlpar);
     conduct = floor(conduct, 0.0);
     ddt(Pe) -= conduct      // Heat conduction

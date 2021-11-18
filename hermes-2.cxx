@@ -206,7 +206,7 @@ namespace FV {
   }
 }
 
-BoutReal floor(const BoutReal &var, const BoutReal &f) {
+BoutReal floor(BoutReal var, BoutReal f) {
   if (var < f)
     return f;
   return var;
@@ -239,6 +239,20 @@ const Field3D &yup(const Field3D &f) { return f.yup(); }
 BoutReal yup(BoutReal f) { return f; };
 const Field3D &ydown(const Field3D &f) { return f.ydown(); }
 BoutReal ydown(BoutReal f) { return f; };
+const BoutReal yup(BoutReal f, Ind3D i) { return f; };
+const BoutReal ydown(BoutReal f, Ind3D i) { return f; };
+// const BoutReal& yup(const Field3D &f, Ind3D i) { return f.yup()[i.yp()]; }
+// const BoutReal& ydown(const Field3D &f, Ind3D i) { return f.ydown()[i.ym()];
+// } BoutReal& yup(Field3D &f, Ind3D i) { return f.yup()[i.yp()]; } BoutReal&
+// ydown(Field3D &f, Ind3D i) { return f.ydown()[i.ym()]; }
+const BoutReal &yup(const Field3D &f, Ind3D i) { return f.yup()[i]; }
+const BoutReal &ydown(const Field3D &f, Ind3D i) { return f.ydown()[i]; }
+BoutReal &yup(Field3D &f, Ind3D i) { return f.yup()[i]; }
+BoutReal &ydown(Field3D &f, Ind3D i) { return f.ydown()[i]; }
+const BoutReal &_get(const Field3D &f, Ind3D i) { return f[i]; }
+BoutReal &_get(Field3D &f, Ind3D i) { return f[i]; }
+BoutReal _get(BoutReal f, Ind3D i) { return f; };
+BoutReal copy(BoutReal f) { return f; };
 
 #define DO_ALL(op, name)                                                       \
   template <class A, class B> Field3D name##_all(const A &a, const B &b) {     \
@@ -249,6 +263,17 @@ BoutReal ydown(BoutReal f) { return f; };
     result.ydown() = op(ydown(a), ydown(b));                                   \
     setRegions(result);                                                        \
     return result;                                                             \
+  }                                                                            \
+  template <class A, class B>                                                  \
+  void name##_all(Field3D &result, const A &a, const B &b, Ind3D i) {          \
+    result[i] = op(_get(a, i), _get(b, i));                                    \
+    yup(result, i) = op(yup(a, i), yup(b, i));                                 \
+    ydown(result, i) = op(ydown(a, i), ydown(b, i));                           \
+  }                                                                            \
+  template <class B> void name##_all(Field3D &result, const B &b, Ind3D i) {   \
+    result[i] = op(result[i], _get(b, i));                                     \
+    yup(result, i) = op(yup(result, i), yup(b, i));                            \
+    ydown(result, i) = op(ydown(result, i), ydown(b, i));                      \
   }
 
 DO_ALL(floor, floor)
@@ -264,7 +289,20 @@ DO_ALL(pow, pow)
     result.ydown() = ydown(a) op ydown(b);                                     \
     setRegions(result);                                                        \
     return result;                                                             \
+  }                                                                            \
+  template <class A, class B>                                                  \
+  void name##_all(Field3D &result, const A &a, const B &b, Ind3D i) {          \
+    result[i] = _get(a, i) op _get(b, i);                                      \
+    yup(result, i) = yup(a, i) op yup(b, i);                                   \
+    ydown(result, i) = ydown(a, i) op ydown(b, i);                             \
   }
+
+// void div_all(Field3D & result, const Field3D & a, const Field3D & b, Ind3D i)
+// {
+//   result[i] = a[i] / b[i];
+//   result.yup()[i.yp()] = a.yup()[i.yp()] / b.yup()[i.yp()];
+//   result.ydown()[i.ym()] = a.ydown()[i.ym()] / b.ydown()[i.ym()];
+// }
 
 DO_ALL(*, mul)
 DO_ALL(/, div)
@@ -281,6 +319,11 @@ DO_ALL(-, sub)
     result.ydown() = op(a.ydown());                                            \
     setRegions(result);                                                        \
     return result;                                                             \
+  }                                                                            \
+  void op##_all(Field3D &result, const Field3D &a, Ind3D i) {                  \
+    result[i] = op(a[i]);                                                      \
+    yup(result, i) = op(yup(a, i));                                            \
+    ydown(result, i) = op(ydown(a, i));                                        \
   }
 
 DO_ALL(sqrt)
@@ -303,6 +346,22 @@ void check_all(Field3D &f) {
   checkData(f);
   checkData(f.yup());
   checkData(f.ydown());
+}
+
+void alloc_all(Field3D &f) {
+  f.allocate();
+  f.splitParallelSlices();
+  f.yup().allocate();
+  f.ydown().allocate();
+  setRegions(f);
+}
+
+void ASSERT_CLOSE_ALL(const Field3D &a, const Field3D &b) {
+  BOUT_FOR(i, a.getRegion("RGN_NOY")) {
+    ASSERT0(std::abs(a[i] - b[i]) < 1e-10);
+    ASSERT0(std::abs(yup(a, i) - yup(b, i)) < 1e-10);
+    ASSERT0(std::abs(ydown(a, i) - ydown(b, i)) < 1e-10);
+  }
 }
 
 /// Modifies and returns the first argument, taking the boundary from second argument
@@ -1158,6 +1217,9 @@ int Hermes::init(bool restarting) {
   opt["Vort"].setConditionallyUsed();
   opt["VePsi"].setConditionallyUsed();
 
+  alloc_all(Te);
+  alloc_all(Ti);
+  alloc_all(Vi);
   return 0;
 }
 
@@ -1184,29 +1246,55 @@ int Hermes::rhs(BoutReal t) {
   Ne.applyParallelBoundary();
   Pe.applyParallelBoundary();
   Pi.applyParallelBoundary();
-
-  //Field3D Ne = floor_all(Ne, 1e-5);
-  Ne = floor_all(Ne, 1e-5);
-  
-  if (!evolve_te) {
-    Pe = copy_all(Ne);  // Fixed electron temperature
-  }
-  
-  Te = div_all(Pe, Ne);
   NVi.applyParallelBoundary();
-  Vi = div_all(NVi, Ne);
 
-  Te = floor_all(Te, 0.1 / Tnorm);
+  // Are there any currents? If not, then there is no source
+  // for vorticity, phi = 0 and jpar = 0
+  bool currents = j_par | j_diamag;
 
-  Pe = mul_all(Te, Ne);
+  // Local sound speed. Used for parallel advection operator
+  // Assumes isothermal electrons, adiabatic ions
+  // The factor scale_num_cs can be used to test sensitity
+  Field3D sound_speed;
+  sound_speed.allocate();
 
-  if (!evolve_ti) {
-    Pi = copy_all(Ne);  // Fixed ion temperature
+  alloc_all(Te);
+  alloc_all(Ti);
+  alloc_all(Vi);
+  BOUT_FOR(i, Ne.getRegion("RGN_ALL")) {
+    // Field3D Ne = floor_all(Ne, 1e-5);
+    floor_all(Ne, 1e-5, i);
+
+    if (!evolve_te) {
+      copy_all(Pe, Ne, i); // Fixed electron temperature
+    }
+
+    div_all(Te, Pe, Ne, i);
+    ASSERT0(Te[i] > 1e-10);
+    /// printf("%f\n", Te[i]);
+    div_all(Vi, NVi, Ne, i);
+
+    floor_all(Te, 0.1 / Tnorm, i);
+    ASSERT0(Te[i] > 1e-10);
+
+    mul_all(Pe, Te, Ne, i);
+
+    if (!evolve_ti) {
+      copy_all(Pi, Ne, i); // Fixed ion temperature
+    }
+
+    div_all(Ti, Pi, Ne, i);
+    floor_all(Ti, 0.1 / Tnorm, i);
+    mul_all(Pi, Ti, Ne, i);
+    div_all(Te, Pe, Ne, i);
+    ASSERT0(Te[i] > 1e-10);
+
+    sound_speed[i] = scale_num_cs * sqrt(Te[i] + Ti[i] * (5. / 3));
+    if (floor_num_cs > 0.0) {
+      // Apply a floor function to the sound speed
+      sound_speed[i] = floor(sound_speed[i], floor_num_cs);
+    }
   }
-  
-  Ti = div_all(Pi, Ne);
-  Ti = floor_all(Ti, 0.1 / Tnorm);
-  Pi = mul_all(Ti, Ne);
 
   // Set radial boundary conditions on Te, Ti, Vi
   //
@@ -1263,19 +1351,6 @@ int Hermes::rhs(BoutReal t) {
       }
     }
   }
-
-  // Are there any currents? If not, then there is no source
-  // for vorticity, phi = 0 and jpar = 0
-  bool currents = j_par | j_diamag;
-
-  // Local sound speed. Used for parallel advection operator
-  // Assumes isothermal electrons, adiabatic ions
-  // The factor scale_num_cs can be used to test sensitity
-  Field3D sound_speed = scale_num_cs * sqrt(Te + Ti * (5. / 3));
-  if (floor_num_cs > 0.0) {
-    // Apply a floor function to the sound speed
-    sound_speed = floor(sound_speed, floor_num_cs);
-  }
   sound_speed.applyBoundary("neumann");
   
   //////////////////////////////////////////////////////////////
@@ -1284,7 +1359,6 @@ int Hermes::rhs(BoutReal t) {
   //
 
   TRACE("Electrostatic potential");
-
   if (!currents) {
     // Disabling electric fields
     // phi = 0.0; // Already set in initialisation
@@ -1297,7 +1371,7 @@ int Hermes::rhs(BoutReal t) {
     //       and only phi is considered, not phi + Pi which is handled in Boussinesq solves
     Field2D phi_boundary2d;
     Field3D phi_boundary3d;
-    
+
     if (phi_boundary_relax) {
       // Update the boundary regions by relaxing towards zero gradient
       // on a given timescale.
@@ -2338,11 +2412,11 @@ int Hermes::rhs(BoutReal t) {
   }
 
   // Ensure that Ne, Te and Pe are calculated in guard cells
-  Ne = floor(Ne, 1e-5);
-  Te = floor(Te, 0.001 / Tnorm);
-  Pe = mul_all(Te, Ne);
-  Ti = floor(Ti, 0.001 / Tnorm);
-  Pi = mul_all(Ti, Ne);
+  // Ne = floor(Ne, 1e-5);
+  // Te = floor(Te, 0.001 / Tnorm);
+  // Pe = mul_all(Te, Ne);
+  // Ti = floor(Ti, 0.001 / Tnorm);
+  // Pi = mul_all(Ti, Ne);
 
   //////////////////////////////////////////////////////////////
   // Plasma quantities calculated.

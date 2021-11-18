@@ -254,6 +254,15 @@ Field3D copy_all(const Field3D &f) {
   return result;
 }
 
+Field3D exp_all(const Field3D &f) {
+  auto result{exp(f)};
+  result.splitParallelSlices();
+  result.yup() = exp(f.yup());
+  result.ydown() = exp(f.ydown());
+  setRegions(result);
+  return result;
+}
+
 Field3D div_all(Field3D num, Field3D den) {
   setRegions(num);
   setRegions(den);
@@ -308,6 +317,12 @@ void zero_all(Field3D &f) {
   f.splitParallelSlices();
   f.yup() = 0.0;
   f.ydown() = 0.0;
+}
+
+void check_all(Field3D &f) {
+  checkData(f);
+  checkData(f.yup());
+  checkData(f.ydown());
 }
 
 /// Modifies and returns the first argument, taking the boundary from second argument
@@ -787,7 +802,9 @@ int Hermes::init(bool restarting) {
   if(fci_transform){
     poloidal_flows = false;
     mesh->get(Bxyz, "B",1.0);
+    mesh->get(coord->Bxy, "Bxy", 1.0);
     Bxyz /= Bnorm;
+    coord->Bxy /= Bnorm;
     SAVE_ONCE(Bxyz);
     Bxyz.applyBoundary("neumann");
     ASSERT1( min(Bxyz) > 0.0 );
@@ -803,7 +820,13 @@ int Hermes::init(bool restarting) {
     coord->g_22.applyParallelBoundary("parallel_neumann");
     coord->g_23.applyParallelBoundary("parallel_neumann");
     coord->g23.applyParallelBoundary("parallel_neumann");
-    coord->Bxy.applyParallelBoundary("parallel_neumann");
+    // coord->Bxy.applyParallelBoundary("parallel_neumann");
+    auto logBxy = log(coord->Bxy);
+    logBxy.applyBoundary("neumann");
+    mesh->communicate(logBxy);
+    logBxy.applyParallelBoundary("parallel_neumann");
+    printf("Setting from log");
+    coord->Bxy = exp_all(logBxy);
 
     bout::checkPositive(coord->Bxy, "f", "RGN_NOCORNERS");
     bout::checkPositive(coord->Bxy.yup(), "fyup", "RGN_YPAR_+1");
@@ -1187,7 +1210,7 @@ int Hermes::rhs(BoutReal t) {
   mesh->communicate(EvolvingVars);
   Ne.applyParallelBoundary();
   Pe.applyParallelBoundary();
-
+  Pi.applyParallelBoundary();
 
   //Field3D Ne = floor_all(Ne, 1e-5);
   Ne = floor_all(Ne, 1e-5);
@@ -2348,10 +2371,10 @@ int Hermes::rhs(BoutReal t) {
   // Ensure that Ne, Te and Pe are calculated in guard cells
   Ne = floor(Ne, 1e-5);
   Te = floor(Te, 0.001 / Tnorm);
-  Pe = Te * Ne;
+  Pe = mul_all(Te, Ne);
   Ti = floor(Ti, 0.001 / Tnorm);
-  Pi = Ti * Ne;
-  
+  Pi = mul_all(Ti, Ne);
+
   //////////////////////////////////////////////////////////////
   // Plasma quantities calculated.
   // At this point we have calculated all boundary conditions,
@@ -2491,7 +2514,8 @@ int Hermes::rhs(BoutReal t) {
     // Boundary conditions on heat conduction coefficients
     for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
       for (int jz = 0; jz < mesh->LocalNz; jz++) {
-	kappa_epar(r.ind, mesh->ystart - 1, jz) = kappa_epar(r.ind, mesh->ystart, jz);
+        ASSERT3(fci_transform == false);
+        kappa_epar(r.ind, mesh->ystart - 1, jz) = kappa_epar(r.ind, mesh->ystart, jz);
 	kappa_ipar(r.ind, mesh->ystart - 1, jz) = kappa_ipar(r.ind, mesh->ystart, jz);
       }
     }
@@ -2669,6 +2693,7 @@ int Hermes::rhs(BoutReal t) {
 	ddt(Ne) -= FV::Div_par(Ne, Ve, sound_speed);
       }
     }else{
+
       Field3D neve = mul_all(Ne,Ve);
       mesh->communicate(neve);
       neve.applyParallelBoundary("parallel_neumann"); // CHECK?
@@ -2711,9 +2736,13 @@ int Hermes::rhs(BoutReal t) {
     Dn = (Te + Ti) / (tau_e * mi_me * SQ(coord->Bxy));
     if(fci_transform){
       mesh->communicate(Dn);
+      Dn.applyParallelBoundary("parallel_neumann"); // TODO: check
+      // TODO: use all versions
       Field3D Ne_tauB2 = Ne / (tau_e * mi_me * SQ(coord->Bxy));
       Field3D TiTediff = Ti - 0.5 * Te;
       mesh->communicate(Ne_tauB2, TiTediff);
+      Ne_tauB2.applyParallelBoundary("parallel_neumann"); // TODO: check
+      TiTediff.applyParallelBoundary("parallel_neumann"); // TODO: check
       ddt(Ne) += FV::Div_a_Laplace_perp(Dn, Ne);
       ddt(Ne) += FV::Div_a_Laplace_perp(Ne_tauB2, TiTediff);
     }
@@ -2992,7 +3021,10 @@ int Hermes::rhs(BoutReal t) {
 
     // Parallel electron pressure
     if (pe_par) {
-      if(fci_transform){mesh->communicate(Pe);Pe.applyParallelBoundary();}
+      // if(fci_transform){
+      // 	mesh->communicate(Pe);
+      // 	Pe.applyParallelBoundary();
+      // }
       ddt(VePsi) -= mi_me * Grad_parP(Pe) / NeVe;
     }
     
@@ -3136,10 +3168,10 @@ int Hermes::rhs(BoutReal t) {
       if(!fci_transform){
 	ddt(NVi) -= Grad_parP(Pe + Pi);
       }else{
-	Field3D peppi = Pe + Pi ; //add_all(Pe, Pi);
-	mesh->communicate(peppi);
-	peppi.applyParallelBoundary("parallel_neumann");
-	ddt(NVi) -= Grad_parP(peppi);
+        Field3D peppi = add_all(Pe, Pi);
+        // mesh->communicate(peppi);
+        // peppi.applyParallelBoundary("parallel_neumann");
+        ddt(NVi) -= Grad_parP(peppi);
       }
     }
     
@@ -3191,11 +3223,12 @@ int Hermes::rhs(BoutReal t) {
     if (classical_diffusion) {
       // Using same cross-field drift as in density equation
       Field3D ViDn = mul_all(Vi,Dn);
-      mesh->communicate(ViDn);
       ddt(NVi) += FV::Div_a_Laplace_perp(ViDn, Ne);
       Field3D NVi_tauB2 = NVi / (tau_e * mi_me * SQ(coord->Bxy));
       Field3D TiTediff = Ti - 0.5 * Te;
       mesh->communicate(NVi_tauB2, TiTediff);
+      NVi_tauB2.applyParallelBoundary("parallel_neumann");
+      TiTediff.applyParallelBoundary("parallel_neumann");
       ddt(NVi) += FV::Div_a_Laplace_perp(NVi_tauB2, TiTediff);
     }
 
@@ -3215,8 +3248,8 @@ int Hermes::rhs(BoutReal t) {
       // Diffusion which kicks in at very low density, in order to
       // help prevent negative density regions
       if(fci_transform){
-	mesh->communicate(NVi);
-	ddt(NVi) += Div_par_K_Grad_par(SQ(coord->dy) * coord->g_22 * 1e-4 / Ne, NVi);
+        // mesh->communicate(NVi);
+        ddt(NVi) += Div_par_K_Grad_par(SQ(coord->dy) * coord->g_22 * 1e-4 / Ne, NVi);
       }else{
 	ddt(NVi) += FV::Div_par_K_Grad_par(SQ(coord->dy) * coord->g_22 * 1e-4 / Ne, NVi);
       }	
@@ -3252,9 +3285,9 @@ int Hermes::rhs(BoutReal t) {
     if (parallel_flow_p_term) {
       // Parallel flow
       if (fci_transform){
-	mesh->communicate(Pe);
-	Pe.applyParallelBoundary();
-	Field3D peve = mul_all(Pe,Ve);
+        // mesh->communicate(Pe);
+        // Pe.applyParallelBoundary();
+        Field3D peve = mul_all(Pe,Ve);
 	//mesh->communicate(peve);
 	//peve->
 	ddt(Pe) -= Div_parP(peve);
@@ -3284,7 +3317,9 @@ int Hermes::rhs(BoutReal t) {
     // Parallel heat conduction
     if (thermal_conduction) {
       if (fci_transform) {
-        mesh->communicate(kappa_epar, Te);
+        mesh->communicate(kappa_epar);
+        kappa_epar.applyParallelBoundary("parallel_neumann");
+        check_all(kappa_epar);
         ddt(Pe) += (2. / 3) * Div_par_K_Grad_par(kappa_epar, Te);
       } else {
         ddt(Pe) += (2. / 3) * FV::Div_par_K_Grad_par(kappa_epar, Te);
@@ -3295,7 +3330,7 @@ int Hermes::rhs(BoutReal t) {
       // Parallel heat convection
       if (fci_transform) {
         Field3D tejpar = mul_all(Te,Jpar);
-        mesh->communicate(tejpar);
+        // mesh->communicate(tejpar);
         ddt(Pe) += (2. / 3) * 0.71 * Div_parP(tejpar);
       } else {
         ddt(Pe) += (2. / 3) * 0.71 * Div_par(Te * Jpar);
@@ -3491,7 +3526,7 @@ int Hermes::rhs(BoutReal t) {
     // Transfer and source terms
     if (thermal_force) {
       if (fci_transform) {
-        mesh->communicate(Te);
+        // mesh->communicate(Te);
       }
       ddt(Pe) -= (2. / 3) * 0.71 * Jpar * Grad_parP(Te);
     }
@@ -3500,8 +3535,8 @@ int Hermes::rhs(BoutReal t) {
       // This term balances energetically the pressure term
       // in Ohm's law
       if (fci_transform) {
-        mesh->communicate(Ve);
-	Ve.applyParallelBoundary("parallel_neumann");
+        // mesh->communicate(Ve);
+        Ve.applyParallelBoundary("parallel_neumann");
       }
       ddt(Pe) -= (2. / 3) * Pe * Div_parP(Ve);
     }
@@ -3519,8 +3554,9 @@ int Hermes::rhs(BoutReal t) {
       Field3D nu_rho2 = Te / (tau_e * mi_me * SQ(coord->Bxy));
       Field3D PePi = add_all(Pe, Pi);
       mesh->communicate(nu_rho2);
+      nu_rho2.applyParallelBoundary("parallel_neumann");
       Field3D nu_rho2Ne = mul_all(nu_rho2, Ne);
-      mesh->communicate(nu_rho2Ne,Te);
+      // mesh->communicate(nu_rho2Ne, Te);
       ddt(Pe) += (2. / 3)
     	* (FV::Div_a_Laplace_perp(nu_rho2, PePi)
     	   + (11. / 12) * FV::Div_a_Laplace_perp(nu_rho2Ne, Te));
@@ -3633,7 +3669,7 @@ int Hermes::rhs(BoutReal t) {
     if (parallel_flow_p_term) {
       if (fci_transform) {
         Field3D pivi = mul_all(Pi,Vi);
-        mesh->communicate(pivi);
+        // mesh->communicate(pivi);
         ddt(Pi) -= Div_parP(pivi);
       } else {
         ddt(Pi) -= FV::Div_par(Pi, Vi, sound_speed);
@@ -3665,7 +3701,7 @@ int Hermes::rhs(BoutReal t) {
 
     if (j_par) {
       if (fci_transform) {
-        mesh->communicate(Pi);
+        // mesh->communicate(Pi);
       }
       if (boussinesq) {
         ddt(Pi) -= (2. / 3) * Jpar * Grad_parP(Pi);
@@ -3677,7 +3713,9 @@ int Hermes::rhs(BoutReal t) {
     // Parallel heat conduction
     if (thermal_conduction) {
       if (fci_transform) {
-        mesh->communicate(kappa_ipar, Ti);
+        // mesh->communicate(kappa_ipar, Ti);
+        mesh->communicate(kappa_ipar);
+        kappa_ipar.applyParallelBoundary("parallel_neumann");
         ddt(Pi) += (2. / 3) * Div_par_K_Grad_par(kappa_ipar, Ti);
       } else {
         ddt(Pi) += (2. / 3) * FV::Div_par_K_Grad_par(kappa_ipar, Ti);
@@ -3689,7 +3727,7 @@ int Hermes::rhs(BoutReal t) {
       // This term balances energetically the pressure term
       // in the parallel momentum equation
       if (fci_transform) {
-        mesh->communicate(Vi);
+        // mesh->communicate(Vi);
       }
       ddt(Pi) -= (2. / 3) * Pi * Div_parP(Vi);
     }
@@ -3709,6 +3747,7 @@ int Hermes::rhs(BoutReal t) {
       // kappa_perp = 2 * n * nu_ii * rho_i^2
       Field3D Pi_B2tau = 2. * Pi / (SQ(coord->Bxy) * tau_i);
       mesh->communicate(Pi_B2tau);
+      Pi_B2tau.applyParallelBoundary("parallel_neumann");
       ddt(Pi) +=
           (2. / 3) * FV::Div_a_Laplace_perp(Pi_B2tau, Ti);
 
@@ -3717,9 +3756,10 @@ int Hermes::rhs(BoutReal t) {
       // nu_rho2 = (Ti/Te) * nu_ei * rho_e^2 in normalised units
       Field3D nu_rho2 = Ti / (tau_e * mi_me * SQ(coord->Bxy));
       Field3D PePi = add_all(Pe , Pi);
-      mesh->communicate(nu_rho2,PePi);
+      mesh->communicate(nu_rho2); //,PePi);
+      nu_rho2.applyParallelBoundary("parallel_neumann");
       Field3D nu_rho2Ne = mul_all(nu_rho2, Ne);
-      mesh->communicate(nu_rho2Ne,Te);
+      // mesh->communicate(nu_rho2Ne,Te);
       ddt(Pi) += (5. / 3)
                  * (FV::Div_a_Laplace_perp(nu_rho2, PePi)
                     - (3. / 2) * FV::Div_a_Laplace_perp(nu_rho2Ne, Te));
@@ -3729,8 +3769,8 @@ int Hermes::rhs(BoutReal t) {
 
       if (currents) {
         Vector3D Grad_perp_vort = Grad(Vort);
-    	Field3D phiPi = phi+Pi;
-    	mesh->communicate(phiPi);
+        Field3D phiPi = add_all(phi, Pi);
+        // mesh->communicate(phiPi);
         Grad_perp_vort.y = 0.0; // Zero parallel component
         ddt(Pi) -= (2. / 3) * (3. / 10) * Ti / (SQ(coord->Bxy) * tau_i)
                    * (Grad_perp_vort * Grad(phiPi));
@@ -3740,15 +3780,15 @@ int Hermes::rhs(BoutReal t) {
     if (ion_viscosity) {
       // Collisional heating due to parallel viscosity
       Field3D sqrtBVi = mul_all(sqrtB,Vi);
-      mesh->communicate(sqrtBVi,Vi);
+      // mesh->communicate(sqrtBVi,Vi);
       ddt(Pi) +=
           (2. / 3) * 1.28 * (Pi * tau_i / sqrtB) * Grad_par(sqrtBVi) * Div_parP(Vi);
 
       if (currents) {
         ddt(Pi) -= (4. / 9) * Pi_ciperp * Div_parP(Vi);
         //(4. / 9) * Vi * B32 * Grad_par(Pi_ciperp / B32);
-    	Field3D phiPi = phi + Pi;
-    	mesh->communicate(phiPi);
+        Field3D phiPi = add_all(phi, Pi);
+        // mesh->communicate(phiPi);
         ddt(Pi) -= (2. / 6) * Pi_ci * fci_curvature(phiPi);//Curlb_B * Grad(phiPi);
         ddt(Pi) += (2. / 9) * bracket(Pi_ci, phi + Pi, BRACKET_ARAKAWA) * bracket_factor;
       }
@@ -4160,8 +4200,15 @@ int Hermes::rhs(BoutReal t) {
     if (neutral_friction) {
       // Vorticity
       if (boussinesq) {
-        ddt(Vort) -= FV::Div_a_Laplace_perp(
-            neutrals->Fperp / (Ne * SQ(coord->Bxy)), phi);
+        if (fci_transform) {
+          Field3D tmp = neutrals->Fperp / (Ne * SQ(coord->Bxy));
+          mesh->communicate(tmp);
+          tmp.applyParallelBoundary("parallel_neumann");
+          ddt(Vort) -= FV::Div_a_Laplace_perp(tmp, phi);
+        } else {
+          ddt(Vort) -= FV::Div_a_Laplace_perp(
+              neutrals->Fperp / (Ne * SQ(coord->Bxy)), phi);
+        }
       } else {
         ddt(Vort) -=
             FV::Div_a_Laplace_perp(neutrals->Fperp / SQ(coord->Bxy), phi);

@@ -232,7 +232,7 @@ sheath_ydown = true
 sheath_allow_supersonic = false
 sheath_gamma_e = 4   # Electron sheath heat transmission
 sheath_gamma_i = 2.5 # Ion sheath heat transmission
-parallel_sheath = true
+parallel_sheaths = true
 neutral_gamma = 0.0
 
 startprofiles = false

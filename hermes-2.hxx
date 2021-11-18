@@ -282,8 +282,6 @@ private:
   Field3D Bxyz, logB;
   Field3D bracket_factor;
   const Field3D fci_curvature(const Field3D &f);
-
-  Field3D a,b,c,d,f; //Debugging variables
 };
 
 /// Fundamental constants

@@ -1146,7 +1146,6 @@ int Hermes::init(bool restarting) {
   // Preconditioner
   setPrecon((preconfunc)&Hermes::precon);
 
-  SAVE_REPEAT(a,b,c,d);
   if (evolve_te && evolve_ti && parallel_sheaths){
     SAVE_REPEAT(sheath_dpe, sheath_dpi);
   }
@@ -1189,11 +1188,6 @@ int Hermes::rhs(BoutReal t) {
   }
 
   Coordinates *coord = mesh->getCoordinates();
-  a = 0;
-  b = 0;
-  c = 0;
-  d = 0;
-  f = 0;
   if (!evolve_plasma) {
     Ne = 0.0;
     Pe = 0.0;
@@ -2842,12 +2836,11 @@ int Hermes::rhs(BoutReal t) {
     if (j_par) {
       TRACE("Vort:j_par");
       // Parallel current
-      
+
       // This term is central differencing so that it balances the parallel gradient
       // of the potential in Ohm's law
       if(fci_transform){mesh->communicate(Jpar);}
       ddt(Vort) += Div_parP(Jpar);
-      a = Div_parP(Jpar);
     }
 
     if (j_diamag) {
@@ -2859,7 +2852,6 @@ int Hermes::rhs(BoutReal t) {
 	ddt(Vort) += Div((Pi + Pe) * Curlb_B);
       }else{
         ddt(Vort) += fci_curvature(Pi + Pe);
-	b = fci_curvature(Pi + Pe);
       }
     }
 
@@ -2899,8 +2891,6 @@ int Hermes::rhs(BoutReal t) {
 	  // use simplified polarization term from i.e. GBS
 	  ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(Vort, phi, vort_bndry_flux,
 	  				     poloidal_flows, false) * bracket_factor;
-	  c = Div_n_bxGrad_f_B_XPPM(Vort, phi, vort_bndry_flux,
-	  				     poloidal_flows, false) * bracket_factor;
 	}
       }
 
@@ -2923,7 +2913,6 @@ int Hermes::rhs(BoutReal t) {
       Field3D mu = div_all(tilim_3 , tauisqB);
       if (fci_transform) {mesh->communicate(mu);}
       ddt(Vort) += FV::Div_a_Laplace_perp(mu, Vort);
-      d = FV::Div_a_Laplace_perp(mu, Vort);
     }
 
     if (ion_viscosity) {
@@ -2991,7 +2980,6 @@ int Hermes::rhs(BoutReal t) {
       // Adds dissipation term like in other equations, but depending on gradient of potential
       // Note: Doesn't seem to need faster than sound speed
       ddt(Vort) -= SQ(coord->dy)*D2DY2(phi);
-      f = SQ(coord->dy)*D2DY2(phi);
     }
   }
 

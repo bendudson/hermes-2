@@ -276,7 +276,7 @@ private:
 
 
   // Mesh quantities
-  Coordinates::FieldMetric B32, sqrtB;
+  Coordinates::FieldMetric B12, B32, B42;
 
   bool fci_transform;
   Field3D Bxyz, logB;

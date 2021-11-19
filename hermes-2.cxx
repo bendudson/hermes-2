@@ -254,13 +254,19 @@ BoutReal &_get(Field3D &f, Ind3D i) { return f[i]; }
 BoutReal _get(BoutReal f, Ind3D i) { return f; };
 BoutReal copy(BoutReal f) { return f; };
 
+void alloc_all(Field3D &f) {
+  f.allocate();
+  f.splitParallelSlices();
+  f.yup().allocate();
+  f.ydown().allocate();
+  setRegions(f);
+}
+
 #define DO_ALL(op, name)                                                       \
   template <class A, class B> Field3D name##_all(const A &a, const B &b) {     \
-    Field3D result = op(a, b);                                                 \
-    checkData(result, "RGN_ALL");                                              \
-    result.splitParallelSlices();                                              \
-    result.yup() = op(yup(a), yup(b));                                         \
-    result.ydown() = op(ydown(a), ydown(b));                                   \
+    Field3D result;                                                            \
+    alloc_all(result);                                                         \
+    BOUT_FOR(i, result.getRegion("RGN_ALL")) { name##_all(result, a, b, i); }  \
     setRegions(result);                                                        \
     return result;                                                             \
   }                                                                            \
@@ -282,11 +288,10 @@ DO_ALL(pow, pow)
 #undef DO_ALL
 #define DO_ALL(op, name)                                                       \
   template <class A, class B> Field3D name##_all(const A &a, const B &b) {     \
-    Field3D result = a op b;                                                   \
+    Field3D result;                                                            \
+    alloc_all(result);                                                         \
+    BOUT_FOR(i, result.getRegion("RGN_ALL")) { name##_all(result, a, b, i); }  \
     checkData(result, "RGN_ALL");                                              \
-    result.splitParallelSlices();                                              \
-    result.yup() = yup(a) op yup(b);                                           \
-    result.ydown() = ydown(a) op ydown(b);                                     \
     setRegions(result);                                                        \
     return result;                                                             \
   }                                                                            \
@@ -311,19 +316,18 @@ DO_ALL(-, sub)
 
 #undef DO_ALL
 #define DO_ALL(op)                                                             \
-  Field3D op##_all(const Field3D &a) {                                         \
-    Field3D result = op(a);                                                    \
-    checkData(result, "RGN_ALL");                                              \
-    result.splitParallelSlices();                                              \
-    result.yup() = op(a.yup());                                                \
-    result.ydown() = op(a.ydown());                                            \
-    setRegions(result);                                                        \
-    return result;                                                             \
-  }                                                                            \
-  void op##_all(Field3D &result, const Field3D &a, Ind3D i) {                  \
+  inline void op##_all(Field3D &result, const Field3D &a, Ind3D i) {           \
     result[i] = op(a[i]);                                                      \
     yup(result, i) = op(yup(a, i));                                            \
     ydown(result, i) = op(ydown(a, i));                                        \
+  }                                                                            \
+  inline Field3D op##_all(const Field3D &a) {                                  \
+    Field3D result;                                                            \
+    alloc_all(result);                                                         \
+    BOUT_FOR(i, result.getRegion("RGN_ALL")) { op##_all(result, a, i); }       \
+    checkData(result, "RGN_ALL");                                              \
+    setRegions(result);                                                        \
+    return result;                                                             \
   }
 
 DO_ALL(sqrt)
@@ -335,10 +339,12 @@ DO_ALL(log)
 #undef DO_ALL
 
 void set_all(Field3D &f, BoutReal val) {
-  f = val;
-  f.splitParallelSlices();
-  f.yup() = val;
-  f.ydown() = val;
+  alloc_all(f);
+  BOUT_FOR(i, f.getRegion("RGN_ALL")) {
+    f[i] = val;
+    f.yup()[i] = val;
+    f.ydown()[i] = val;
+  }
 }
 void zero_all(Field3D &f) { set_all(f, 0); }
 
@@ -346,14 +352,6 @@ void check_all(Field3D &f) {
   checkData(f);
   checkData(f.yup());
   checkData(f.ydown());
-}
-
-void alloc_all(Field3D &f) {
-  f.allocate();
-  f.splitParallelSlices();
-  f.yup().allocate();
-  f.ydown().allocate();
-  setRegions(f);
 }
 
 void ASSERT_CLOSE_ALL(const Field3D &a, const Field3D &b) {
@@ -1270,12 +1268,12 @@ int Hermes::rhs(BoutReal t) {
     }
 
     div_all(Te, Pe, Ne, i);
-    ASSERT0(Te[i] > 1e-10);
+    // ASSERT0(Te[i] > 1e-10);
     /// printf("%f\n", Te[i]);
     div_all(Vi, NVi, Ne, i);
 
     floor_all(Te, 0.1 / Tnorm, i);
-    ASSERT0(Te[i] > 1e-10);
+    // ASSERT0(Te[i] > 1e-10);
 
     mul_all(Pe, Te, Ne, i);
 
@@ -1287,7 +1285,7 @@ int Hermes::rhs(BoutReal t) {
     floor_all(Ti, 0.1 / Tnorm, i);
     mul_all(Pi, Ti, Ne, i);
     div_all(Te, Pe, Ne, i);
-    ASSERT0(Te[i] > 1e-10);
+    // ASSERT0(Te[i] > 1e-10);
 
     sound_speed[i] = scale_num_cs * sqrt(Te[i] + Ti[i] * (5. / 3));
     if (floor_num_cs > 0.0) {
@@ -2851,7 +2849,7 @@ int Hermes::rhs(BoutReal t) {
   }
   
   if (numdiff > 0.0) {
-    for(auto &i : Ne.getRegion("RGN_NOBNDRY")) {
+    BOUT_FOR(i, Ne.getRegion("RGN_NOBNDRY")) {
       ddt(Ne)[i] += numdiff*(Ne.ydown()[i.ym()] - 2.*Ne[i] + Ne.yup()[i.yp()]);
     }
   }
@@ -4405,7 +4403,7 @@ int Hermes::rhs(BoutReal t) {
   }
 
   return 0;
-}
+} // rhs?
 
 /*!
  * Preconditioner. Solves the heat conduction

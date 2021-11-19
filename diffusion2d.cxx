@@ -23,75 +23,78 @@ Diffusion2D::Diffusion2D(Solver *solver, Mesh*, Options &options) : NeutralModel
 void Diffusion2D::update(const Field3D &Ne, const Field3D &Te, const Field3D &UNUSED(Ti), const Field3D &UNUSED(Vi)) {
   
   mesh->communicate(Nn, Pn);
-  Nn.applyParallelBoundary();
-  Pn.applyParallelBoundary();
-  
-  Nn = floor(Nn, 1e-8);
-  Field3D Tn = Pn / Nn; 
-  Tn = floor(Tn, 0.01/Tnorm);
-  
-  Field3D Nelim = floor(Ne, 1e-19); // Smaller limit for rate coefficients
-  
+
   // Calculate atomic processes
-  for(int i=0;i<mesh->LocalNx;i++)
-    for(int j=0;j<mesh->LocalNy;j++)
-      for(int k=0;k<mesh->LocalNz;k++) {
-        // Charge exchange frequency, normalised to ion cyclotron frequency
-        BoutReal sigma_cx = Nelim(i,j,k)*Nnorm*hydrogen.chargeExchange(Te(i,j,k)*Tnorm)/Fnorm;
-	
-        // Ionisation frequency, normalised to ion cyclotron frequency
-        BoutReal sigma_iz = Nelim(i,j,k)*Nnorm*Nn(i,j,k) * hydrogen.ionisation(Te(i,j,k)*Tnorm)/Fnorm;
-        
-        // Neutral thermal velocity
-        BoutReal vth_n = sqrt(Tn(i,j,k)); // Normalised to Cs0
-	  
-        // Neutral-neutral mean free path
-        BoutReal a0 = PI*SQ(5.29e-11);
-        BoutReal lambda_nn = 1. / (Nnorm*Nn(i,j,k)*a0); // meters
-        if(lambda_nn > Lmax) {
-          // Limit maximum mean free path
-          lambda_nn = Lmax;
-        }
-	
-        lambda_nn /= Lnorm; // Normalised length to Lnorm
-        // Neutral-Neutral collision rate, normalised to ion cyclotron frequency
-        BoutReal sigma_nn = vth_n / lambda_nn;
-	
-        // Total neutral collision frequency, normalised to ion cyclotron frequency
-        BoutReal sigma = sigma_cx + sigma_nn + sigma_iz;
-	
-        // Neutral gas diffusion
-        Dnn(i,j,k) = SQ(vth_n) / sigma;
-	
-        // Rates
-        BoutReal R_rc = SQ(Nelim(i,j,k)) * hydrogen.recombination(Nelim(i,j,k)*Nnorm, Te(i,j,k)*Tnorm) * Nnorm / Fnorm; // Time normalisation
-        BoutReal R_iz = Nelim(i,j,k)*Nn(i,j,k) * hydrogen.ionisation(Te(i,j,k)*Tnorm) * Nnorm / Fnorm; // Time normalisation
-        BoutReal R_cx = sigma_cx * Nn(i,j,k);
-        
-        // Plasma sink / neutral source
-        S(i,j,k) = R_rc - R_iz;
-        
-        // Power transfer from plasma to neutrals
-	
-        Qi(i,j,k) = R_cx * (3./2)*(Te(i,j,k) - Tn(i,j,k));
-        
-        // Power transfer due to ionisation and recombination
-        Qi(i,j,k) += (3./2)*(Te(i,j,k)*R_rc - Tn(i,j,k)*R_iz);
-        
-        // Ion-neutral friction
-        Fperp(i,j,k) = R_cx  // Charge-Exchange
-          + R_rc; // Recombination
-        
-        // Radiated power from plasma
-        // Factor of 1.09 so that recombination becomes an energy source at 5.25eV
-        Rp(i,j,k) = (1.09*Te(i,j,k) - 13.6/Tnorm)*R_rc
-          + (Eionize/Tnorm) * R_iz; // Ionisation energy
-        
-      }
+  BOUT_FOR(i, Ne.getRegion("RGN_ALL")) {
+    Nn[i] = std::max(Nn[i], 1e-8);
+    BoutReal Tn = Pn[i] / Nn[i];
+    Tn = std::max(Tn, 0.01 / Tnorm);
+
+    BoutReal Nelim =
+        std::max(Ne[i], 1e-19); // Smaller limit for rate coefficients
+
+    // Charge exchange frequency, normalised to ion cyclotron frequency
+    BoutReal sigma_cx =
+        Nelim * Nnorm * hydrogen.chargeExchange(Te[i] * Tnorm) / Fnorm;
+
+    // Ionisation frequency, normalised to ion cyclotron frequency
+    BoutReal sigma_iz =
+        Nelim * Nnorm * Nn[i] * hydrogen.ionisation(Te[i] * Tnorm) / Fnorm;
+
+    // Neutral thermal velocity
+    BoutReal vth_n = sqrt(Tn); // Normalised to Cs0
+
+    // Neutral-neutral mean free path
+    BoutReal a0 = PI * SQ(5.29e-11);
+    BoutReal lambda_nn = 1. / (Nnorm * Nn[i] * a0); // meters
+    if (lambda_nn > Lmax) {
+      // Limit maximum mean free path
+      lambda_nn = Lmax;
+    }
+
+    lambda_nn /= Lnorm; // Normalised length to Lnorm
+    // Neutral-Neutral collision rate, normalised to ion cyclotron frequency
+    BoutReal sigma_nn = vth_n / lambda_nn;
+
+    // Total neutral collision frequency, normalised to ion cyclotron frequency
+    BoutReal sigma = sigma_cx + sigma_nn + sigma_iz;
+
+    // Neutral gas diffusion
+    Dnn[i] = SQ(vth_n) / sigma;
+
+    // Rates
+    BoutReal R_rc = SQ(Nelim) *
+                    hydrogen.recombination(Nelim * Nnorm, Te[i] * Tnorm) *
+                    Nnorm / Fnorm; // Time normalisation
+    BoutReal R_iz = Nelim * Nn[i] * hydrogen.ionisation(Te[i] * Tnorm) * Nnorm /
+                    Fnorm; // Time normalisation
+    BoutReal R_cx = sigma_cx * Nn[i];
+
+    // Plasma sink / neutral source
+    S[i] = R_rc - R_iz;
+
+    // Power transfer from plasma to neutrals
+
+    Qi[i] = R_cx * (3. / 2) * (Te[i] - Tn);
+
+    // Power transfer due to ionisation and recombination
+    Qi[i] += (3. / 2) * (Te[i] * R_rc - Tn * R_iz);
+
+    // Ion-neutral friction
+    Fperp[i] = R_cx    // Charge-Exchange
+               + R_rc; // Recombination
+
+    // Radiated power from plasma
+    // Factor of 1.09 so that recombination becomes an energy source at 5.25eV
+    Rp[i] = (1.09 * Te[i] - 13.6 / Tnorm) * R_rc +
+            (Eionize / Tnorm) * R_iz; // Ionisation energy
+  }
   mesh->communicate(Dnn, Fperp);
   Dnn.applyParallelBoundary("parallel_neumann");
   Fperp.applyParallelBoundary("parallel_neumann");
-  
+  Nn.applyParallelBoundary();
+  Pn.applyParallelBoundary();
+
   // Neutral density
   ddt(Nn) = 
     + S 

@@ -2411,13 +2411,6 @@ int Hermes::rhs(BoutReal t) {
     VePsi = Ve;
   }
 
-  // Ensure that Ne, Te and Pe are calculated in guard cells
-  // Ne = floor(Ne, 1e-5);
-  // Te = floor(Te, 0.001 / Tnorm);
-  // Pe = mul_all(Te, Ne);
-  // Ti = floor(Ti, 0.001 / Tnorm);
-  // Pi = mul_all(Ti, Ne);
-
   //////////////////////////////////////////////////////////////
   // Plasma quantities calculated.
   // At this point we have calculated all boundary conditions,
@@ -2585,7 +2578,6 @@ int Hermes::rhs(BoutReal t) {
     ASSERT0(false); // not implemented - ask Brendan
     Field3D Tifree = copy(Ti);
     Tifree.applyBoundary("free_o2");
-    // if(fci_transform){mesh->communicate(Tifree,Pi,Ti,coord->Bxy);}
 
     // For nonlinear terms, need to evaluate qipar and qi squared
     Field3D qipar = -kappa_ipar * Grad_par(Tifree);
@@ -2604,7 +2596,6 @@ int Hermes::rhs(BoutReal t) {
                                                  // cancelled in first term
 
     Field3D phi161Ti = phi + 1.61 * Ti;
-    // mesh->communicate(phi161Ti,Pi);
     // Perpendicular part from curvature
     Pi_ciperp =
         -0.5 * 0.96 * Pi * tau_i *
@@ -2625,14 +2616,14 @@ int Hermes::rhs(BoutReal t) {
 
     Field3D logTi = log(Ti);
     Field3D logPi = log(Pi);
-    // mesh->communicate(logTi, logPi);
+
     Pi_ciperp -=
         0.49 * (qipar / Pi) *
             (2.27 * Grad_par(logTi) - Grad_par(logPi)) +
         0.75 * (0.2 * SQ(qipar) - 0.085 * qisq) / (Pi * Ti);
 
     Field3D logB = log(coord->Bxy);
-    // mesh->communicate(Vi, logB);
+
     // Parallel part
     Pi_cipar = -0.96 * Pi * tau_i *
                (2. * Grad_par(Vi) + Vi * Grad_par(logB));
@@ -3733,10 +3724,11 @@ int Hermes::rhs(BoutReal t) {
       // Resistive drift terms
 
       // nu_rho2 = (Ti/Te) * nu_ei * rho_e^2 in normalised units
-      Field3D nu_rho2 = Ti / (tau_e * mi_me * SQ(coord->Bxy));
+      Field3D nu_rho2 = div_all(Te, mul_all(mul_all(tau_e, mi_me), B42));
+      //Field3D nu_rho2 = Ti / (tau_e * mi_me * SQ(coord->Bxy));
+      //mesh->communicate(nu_rho2); //,PePi);
+      //nu_rho2.applyParallelBoundary("parallel_neumann");
       Field3D PePi = add_all(Pe , Pi);
-      mesh->communicate(nu_rho2); //,PePi);
-      nu_rho2.applyParallelBoundary("parallel_neumann");
       Field3D nu_rho2Ne = mul_all(nu_rho2, Ne);
       // mesh->communicate(nu_rho2Ne,Te);
       ddt(Pi) += (5. / 3)
@@ -3749,7 +3741,6 @@ int Hermes::rhs(BoutReal t) {
       if (currents) {
         Vector3D Grad_perp_vort = Grad(Vort);
         Field3D phiPi = add_all(phi, Pi);
-        // mesh->communicate(phiPi);
         Grad_perp_vort.y = 0.0; // Zero parallel component
         ddt(Pi) -= (2. / 3) * (3. / 10) * Ti / (SQ(coord->Bxy) * tau_i)
                    * (Grad_perp_vort * Grad(phiPi));
@@ -3766,7 +3757,6 @@ int Hermes::rhs(BoutReal t) {
         ddt(Pi) -= (4. / 9) * Pi_ciperp * Div_parP(Vi);
         //(4. / 9) * Vi * B32 * Grad_par(Pi_ciperp / B32);
         Field3D phiPi = add_all(phi, Pi);
-        // mesh->communicate(phiPi);
         ddt(Pi) -= (2. / 6) * Pi_ci * fci_curvature(phiPi);//Curlb_B * Grad(phiPi);
         ddt(Pi) += (2. / 9) * bracket(Pi_ci, phi + Pi, BRACKET_ARAKAWA) * bracket_factor;
       }

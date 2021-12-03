@@ -311,10 +311,12 @@ BoutReal UpdatedRadiatedPower::recombination(BoutReal n, BoutReal T) {
     double RTI = 1;
     for (int i = 0; i < 9; i++) {
       double RNJ = 1;
+      double sumb = 0;
       for (int j = 0; j < 9; j++) {
-        suma += MATA[i][j] * RNJ * RTI;
+        sumb += MATA[i][j] * RNJ;
         RNJ *= RN;
       }
+      suma = suma + (sumb * RTI);
       RTI *= RT;
     }
   }

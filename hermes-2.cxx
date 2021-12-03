@@ -262,6 +262,11 @@ void alloc_all(Field3D &f) {
   setRegions(f);
 }
 
+#define GET_ALL(name)				\
+  auto * name##a = &name[Ind3D(0)];		\
+  auto * name##b = &name.yup()[Ind3D(0)];	\
+  auto * name##c = &name.yup()[Ind3D(0)];
+
 #define DO_ALL(op, name)                                                       \
   template <class A, class B> Field3D name##_all(const A &a, const B &b) {     \
     Field3D result;                                                            \
@@ -309,6 +314,7 @@ DO_ALL(pow, pow)
 //   result.ydown()[i.ym()] = a.ydown()[i.ym()] / b.ydown()[i.ym()];
 // }
 
+//#include "mul_all.cxx"
 DO_ALL(*, mul)
 DO_ALL(/, div)
 DO_ALL(+, add)
@@ -2430,10 +2436,12 @@ int Hermes::rhs(BoutReal t) {
   TRACE("Collisions");
   
   // Normalised electron collision time
-  tau_e = mul_all((Cs0 / rho_s0) * tau_e0, div_all(pow_all(Te, 1.5), Ne));
+  tau_e = mul_all((Cs0 / rho_s0) * tau_e0, div_all(mul_all(Te, sqrt_all(Te)), Ne));
+  //tau_e = mul_all((Cs0 / rho_s0) * tau_e0, div_all(pow_all(Te, 1.5), Ne));
 
   // Normalised ion-ion collision time
-  tau_i = mul_all((Cs0 / rho_s0) * tau_i0, div_all(pow_all(Ti, 1.5), Ne));
+  tau_i = mul_all((Cs0 / rho_s0) * tau_i0, div_all(mul_all(Ti, sqrt_all(Ti)), Ne));
+  //tau_i = mul_all((Cs0 / rho_s0) * tau_i0, div_all(pow_all(Ti, 1.5), Ne));
 
   if (ion_neutral && ( neutrals || (ion_neutral_rate > 0.0))) {
     // Include ion-neutral collisions in collision time

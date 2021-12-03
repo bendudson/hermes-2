@@ -300,6 +300,37 @@ DO_ALL(pow, pow)
     setRegions(result);                                                        \
     return result;                                                             \
   }                                                                            \
+  Field3D name##_all(const Field3D &a, const Field3D &b) {                     \
+    Field3D result;                                                            \
+    alloc_all(result);                                                         \
+    const int n = result.getNx() * result.getNy() * result.getNz();            \
+    GET_ALL(result);                                                           \
+    GET_ALL(a);                                                                \
+    GET_ALL(b);                                                                \
+    BOUT_OMP(omp parallel for simd)                                            \
+    for (int i = 0; i < n; ++i) {                                              \
+      resulta[i] = aa[i] op ba[i];                                             \
+      resultb[i] = ab[i] op bb[i];                                             \
+      resultc[i] = ac[i] op bc[i];                                             \
+    }                                                                          \
+    setRegions(result);                                                        \
+    return result;                                                             \
+  }                                                                            \
+  Field3D name##_all(const Field3D &a, BoutReal b) {                           \
+    Field3D result;                                                            \
+    alloc_all(result);                                                         \
+    const int n = result.getNx() * result.getNy() * result.getNz();            \
+    GET_ALL(result);                                                           \
+    GET_ALL(a);                                                                \
+    BOUT_OMP(omp parallel for simd)                                            \
+    for (int i = 0; i < n; ++i) {                                              \
+      resulta[i] = aa[i] op b;                                                 \
+      resultb[i] = ab[i] op b;                                                 \
+      resultc[i] = ac[i] op b;                                                 \
+    }                                                                          \
+    setRegions(result);                                                        \
+    return result;                                                             \
+  }                                                                            \
   template <class A, class B>                                                  \
   void name##_all(Field3D &result, const A &a, const B &b, Ind3D i) {          \
     result[i] = _get(a, i) op _get(b, i);                                      \

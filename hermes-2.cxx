@@ -2465,23 +2465,46 @@ int Hermes::rhs(BoutReal t) {
   //////////////////////////////////////////////////////////////
   // Collisions and stress tensor
   TRACE("Collisions");
-  
-  // Normalised electron collision time
-  tau_e = mul_all((Cs0 / rho_s0) * tau_e0, div_all(mul_all(Te, sqrt_all(Te)), Ne));
-  //tau_e = mul_all((Cs0 / rho_s0) * tau_e0, div_all(pow_all(Te, 1.5), Ne));
 
-  // Normalised ion-ion collision time
-  tau_i = mul_all((Cs0 / rho_s0) * tau_i0, div_all(mul_all(Ti, sqrt_all(Ti)), Ne));
-  //tau_i = mul_all((Cs0 / rho_s0) * tau_i0, div_all(pow_all(Ti, 1.5), Ne));
-
+  const BoutReal tau_e1 = (Cs0 / rho_s0) * tau_e0;
+  const BoutReal tau_i1 = (Cs0 / rho_s0) * tau_i0;
+  Field3D neutral_rate;
   if (ion_neutral && ( neutrals || (ion_neutral_rate > 0.0))) {
     // Include ion-neutral collisions in collision time
-    
-    Field3D neutral_rate = neutrals ? neutrals->Fperp : ion_neutral_rate;
-    
-    // Add collision frequencies (1/tau_i + neutral rate)
-    tau_i = div_all(tau_i, add_all(1, mul_all(tau_i, neutral_rate)));
+    neutral_rate = neutrals ? neutrals->Fperp : ion_neutral_rate;
   }
+  alloc_all(tau_e);
+  alloc_all(tau_i);
+  BOUT_FOR(i, Te.getRegion("RGN_ALL")) {
+    // Normalised electron collision time
+    // tau_e[i] = mul_all((Cs0 / rho_s0) * tau_e0, div_all(mul_all(Te,
+    // sqrt_all(Te)), Ne));
+    tau_e[i] = tau_e1 * (Te[i] * sqrt(Te[i]) / Ne[i]);
+    tau_e.yup()[i] = tau_e1 * (Te.yup()[i] * sqrt(Te.yup()[i]) / Ne.yup()[i]);
+    tau_e.ydown()[i] =
+        tau_e1 * (Te.ydown()[i] * sqrt(Te.ydown()[i]) / Ne.ydown()[i]);
+
+    // Normalised ion-ion collision time
+    tau_i[i] = tau_i1 * (Ti[i] * sqrt(Ti[i])) / Ne[i];
+    tau_i.yup()[i] = tau_i1 * (Ti.yup()[i] * sqrt(Ti.yup()[i])) / Ne.yup()[i];
+    tau_i.ydown()[i] =
+        tau_i1 * (Ti.ydown()[i] * sqrt(Ti.ydown()[i])) / Ne.ydown()[i];
+
+    if (ion_neutral && (neutrals || (ion_neutral_rate > 0.0))) {
+      // Include ion-neutral collisions in collision time
+      // Add collision frequencies (1/tau_i + neutral rate)
+      tau_i[i] = tau_i[i] / (1 + (tau_i[i] * neutral_rate[i]));
+      tau_i.yup()[i] =
+          tau_i.yup()[i] / (1 + (tau_i.yup()[i] * neutral_rate.yup()[i]));
+      tau_i.ydown()[i] =
+          tau_i.ydown()[i] / (1 + (tau_i.ydown()[i] * neutral_rate.ydown()[i]));
+    }
+  }
+  // tau_e = mul_all((Cs0 / rho_s0) * tau_e0, div_all(mul_all(Te, sqrt_all(Te)), Ne));
+  // tau_i = mul_all((Cs0 / rho_s0) * tau_i0, div_all(mul_all(Ti, sqrt_all(Ti)), Ne));
+  // if (ion_neutral && (neutrals || (ion_neutral_rate > 0.0))) {
+  //   tau_i = div_all(tau_i, add_all(1, mul_all(tau_i, neutral_rate)));
+  // }
 
   // Collisional damping (normalised)
   if (resistivity || (!electromagnetic && !FiniteElMass)) {

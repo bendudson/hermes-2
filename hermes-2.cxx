@@ -1637,6 +1637,8 @@ int Hermes::rhs(BoutReal t) {
 
         Ve.applyBoundary(t);
         mesh->communicate(Ve, psi);
+        // Ve.applyParallelBoundary();
+        // psi.applyParallelBoundary();
 
         Jpar = mul_all(Ne, sub_all(Vi, Ve));
         Jpar.applyBoundary(t);
@@ -2500,9 +2502,10 @@ int Hermes::rhs(BoutReal t) {
           tau_i.ydown()[i] / (1 + (tau_i.ydown()[i] * neutral_rate.ydown()[i]));
     }
   }
-  // tau_e = mul_all((Cs0 / rho_s0) * tau_e0, div_all(mul_all(Te, sqrt_all(Te)), Ne));
-  // tau_i = mul_all((Cs0 / rho_s0) * tau_i0, div_all(mul_all(Ti, sqrt_all(Ti)), Ne));
-  // if (ion_neutral && (neutrals || (ion_neutral_rate > 0.0))) {
+  // tau_e = mul_all((Cs0 / rho_s0) * tau_e0, div_all(mul_all(Te, sqrt_all(Te)),
+  // Ne)); tau_i = mul_all((Cs0 / rho_s0) * tau_i0, div_all(mul_all(Ti,
+  // sqrt_all(Ti)), Ne)); if (ion_neutral && (neutrals || (ion_neutral_rate >
+  // 0.0))) {
   //   tau_i = div_all(tau_i, add_all(1, mul_all(tau_i, neutral_rate)));
   // }
 
@@ -2777,35 +2780,38 @@ int Hermes::rhs(BoutReal t) {
 
   // Parallel flow
   if (parallel_flow) {
-    if (!fci_transform){
-      if (currents) {
-	// Parallel wave speed increased to electron sound speed
-	// since electrostatic & electromagnetic waves are supported
-	ddt(Ne) -= FV::Div_par(Ne, Ve, sqrt(mi_me) * sound_speed);
-      }else {
-	// Parallel wave speed is ion sound speed
-	ddt(Ne) -= FV::Div_par(Ne, Ve, sound_speed);
-      }
-    }else{
-
-      Field3D neve = mul_all(Ne,Ve);
-      ddt(Ne) -= Div_parP(neve);
-      // b = Div_parP(neve);
-      // Skew-symmetric form
-      // Field3D gparne = Grad_par(Ne);
-      // Field3D dparve = Div_parP(Ve);
-      // mesh->communicate(gparne,dparve);
-      // ddt(Ne) -= 0.5 * (Div_par(neve) + mul_all(Ve,gparne) + mul_all(Ne, dparve));
-      // //ddt(Ne) -= 0.5 * (Div_par(neve) + Ve * Grad_par(Ne) + Ne * Div_par(Ve));
-      // a = -0.5 * (Div_parP(neve) + Ve * Grad_par(Ne) + Ne * Div_par(Ve));
-      // auto* coords = mesh->getCoordinates();
-      // for(auto &i : Ne.getRegion("RGN_ALL")) {
-      //   ddt(Ne)[i] -= (Ne.yup()[i.yp()] * Ve.yup()[i.yp()] / coords->Bxy[i.yp()]
-      //               - Ne.ydown()[i.ym()] * Ve.ydown()[i.ym()] / coords->Bxy[i.ym()])
-      //     * coords->Bxy[i] / (coords->dy[i] * sqrt(coords->g_22[i]));
-      // }
-      
-    }	
+    // if (!fci_transform){
+    //   if (currents) {
+    // 	// Parallel wave speed increased to electron sound speed
+    // 	// since electrostatic & electromagnetic waves are supported
+    // 	ddt(Ne) -= FV::Div_par(Ne, Ve, sqrt(mi_me) * sound_speed);
+    //   }else {
+    // 	// Parallel wave speed is ion sound speed
+    // 	ddt(Ne) -= FV::Div_par(Ne, Ve, sound_speed);
+    //   }
+    // }else{
+    check_all(Ne);
+    check_all(Ve);
+    Field3D neve = mul_all(Ne, Ve);
+    check_all(neve);
+    ddt(Ne) -= Div_parP(neve);
+    // b = Div_parP(neve);
+    // Skew-symmetric form
+    // Field3D gparne = Grad_par(Ne);
+    // Field3D dparve = Div_parP(Ve);
+    // mesh->communicate(gparne,dparve);
+    // ddt(Ne) -= 0.5 * (Div_par(neve) + mul_all(Ve,gparne) + mul_all(Ne,
+    // dparve));
+    // //ddt(Ne) -= 0.5 * (Div_par(neve) + Ve * Grad_par(Ne) + Ne *
+    // Div_par(Ve)); a = -0.5 * (Div_parP(neve) + Ve * Grad_par(Ne) + Ne *
+    // Div_par(Ve)); auto* coords = mesh->getCoordinates(); for(auto &i :
+    // Ne.getRegion("RGN_ALL")) {
+    //   ddt(Ne)[i] -= (Ne.yup()[i.yp()] * Ve.yup()[i.yp()] /
+    //   coords->Bxy[i.yp()]
+    //               - Ne.ydown()[i.ym()] * Ve.ydown()[i.ym()] /
+    //               coords->Bxy[i.ym()])
+    //     * coords->Bxy[i] / (coords->dy[i] * sqrt(coords->g_22[i]));
+    // }
   }
 
   if (j_diamag) {
@@ -3081,6 +3087,7 @@ int Hermes::rhs(BoutReal t) {
   ddt(VePsi) = 0.0;
 
   Field3D NeVe = Ne;
+#warning NeVe is Ne?
 
   if (currents && (electromagnetic || FiniteElMass)) {
     // Evolve VePsi except for electrostatic and zero electron mass case
@@ -3775,25 +3782,43 @@ int Hermes::rhs(BoutReal t) {
     // Classical diffusion
 
     if (classical_diffusion) {
-      // Cross-field heat conduction
-      // kappa_perp = 2 * n * nu_ii * rho_i^2
-      Field3D Pi_B2tau = div_all(mul_all(2., Pi), mul_all(B42, tau_i));
+      Field3D Pi_B2tau, PePi, nu_rho2, nu_rho2Ne;
+      alloc_all(Pi_B2tau);
+      alloc_all(PePi);
+      alloc_all(nu_rho2);
+      alloc_all(nu_rho2Ne);
+      BOUT_FOR(i, Pi.getRegion("RGN_ALL")) {
+        // Cross-field heat conduction
+        // kappa_perp = 2 * n * nu_ii * rho_i^2
+        Pi_B2tau[i] = (2. * Pi[i]) / (B42[i] * tau_i[i]);
+        nu_rho2[i] = Te[i] / (tau_e[i] * mi_me * B42[i]);
+        PePi[i] = Pe[i] + Pi[i];
+        nu_rho2Ne[i] = nu_rho2[i] * Ne[i];
+
+        Pi_B2tau.yup()[i] =
+            (2. * Pi.yup()[i]) / (B42.yup()[i] * tau_i.yup()[i]);
+        nu_rho2.yup()[i] =
+            Te.yup()[i] / (tau_e.yup()[i] * mi_me * B42.yup()[i]);
+        PePi.yup()[i] = Pe.yup()[i] + Pi.yup()[i];
+        nu_rho2Ne.yup()[i] = nu_rho2.yup()[i] * Ne.yup()[i];
+
+        Pi_B2tau.ydown()[i] =
+            (2. * Pi.ydown()[i]) / (B42.ydown()[i] * tau_i.ydown()[i]);
+        nu_rho2.ydown()[i] =
+            Te.ydown()[i] / (tau_e.ydown()[i] * mi_me * B42.ydown()[i]);
+        PePi.ydown()[i] = Pe.ydown()[i] + Pi.ydown()[i];
+        nu_rho2Ne.ydown()[i] = nu_rho2.ydown()[i] * Ne.ydown()[i];
+      }
+
+      // BOUT_FOR(i, Pi.getRegion("RGN_NOBNDRY")) {
       ddt(Pi) +=
           (2. / 3) * FV::Div_a_Laplace_perp(Pi_B2tau, Ti);
 
       // Resistive drift terms
 
-      // nu_rho2 = (Ti/Te) * nu_ei * rho_e^2 in normalised units
-      Field3D nu_rho2 = div_all(Te, mul_all(mul_all(tau_e, mi_me), B42));
-      //Field3D nu_rho2 = Ti / (tau_e * mi_me * SQ(coord->Bxy));
-      //mesh->communicate(nu_rho2); //,PePi);
-      //nu_rho2.applyParallelBoundary("parallel_neumann");
-      Field3D PePi = add_all(Pe , Pi);
-      Field3D nu_rho2Ne = mul_all(nu_rho2, Ne);
       // mesh->communicate(nu_rho2Ne,Te);
-      ddt(Pi) += (5. / 3)
-                 * (FV::Div_a_Laplace_perp(nu_rho2, PePi)
-                    - (3. / 2) * FV::Div_a_Laplace_perp(nu_rho2Ne, Te));
+      ddt(Pi) += (5. / 3) * (FV::Div_a_Laplace_perp(nu_rho2, PePi) -
+                             (1.5) * FV::Div_a_Laplace_perp(nu_rho2Ne, Te));
 
       // Collisional heating from perpendicular viscosity
       // in the vorticity equation
@@ -4511,11 +4536,15 @@ const Field3D Hermes::Div_parP(const Field3D &f) {
   auto* coords = mesh->getCoordinates();
   Field3D result;
   result.allocate();
-  for(auto &i : f.getRegion("RGN_NOBNDRY")) {
+  const auto fup = f.yup();
+  const auto fdown = f.ydown();
+  BOUT_FOR(i, f.getRegion("RGN_NOBNDRY")) {
+    // for(auto &i : f.getRegion("RGN_NOBNDRY")) {
     auto yp = i.yp();
     auto ym = i.ym();
-    result[i] = (f.yup()[yp] / coords->Bxy.yup()[yp] - f.ydown()[ym] / coords->Bxy.ydown()[ym])
-                * coords->Bxy[i] / (coords->dy[i] * sqrt(coords->g_22[i]));
+    result[i] = (fup[yp] / coords->Bxy.yup()[yp] -
+                 fdown[ym] / coords->Bxy.ydown()[ym]) *
+                coords->Bxy[i] / (coords->dy[i] * sqrt(coords->g_22[i]));
   }
   return result;
   //return Div_par(f) + 0.5*beta_e*coord->Bxy*bracket(psi, f/coord->Bxy, BRACKET_ARAKAWA);

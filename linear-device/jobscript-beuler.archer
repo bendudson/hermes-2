@@ -1,0 +1,20 @@
+#!/bin/bash
+
+#SBATCH -N1 -n64
+#SBATCH --time=40:00
+#SBATCH --account=e281
+#SBATCH --partition=standard
+#SBATCH --qos=standard
+#SBATCH --output output-beuler.log
+#SBATCH --error error-beuler.log
+
+set -e
+
+# Get setup for STORM/BOUT++
+# Path assumes we are running from under a 'build directory', as created when
+# compiling with CMake - would need to be modified if running from the original
+# 'source' directory.
+source ../../BOUT-configs/archer/bout.env
+
+cd $SLURM_SUBMIT_DIR
+srun --hint=nomultithread --distribution=block:block -n $SLURM_NTASKS ../build/hermes-2 -d annulus-beuler

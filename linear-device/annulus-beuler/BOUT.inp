@@ -76,15 +76,15 @@ upwind = W3
 
 [solver]
 # Note: If evolving neutrals, need preconditioning
-type = cvode
-use_precon = true
+type = beuler
+#use_precon = true
 
-ATOL = 1.0e-10  # absolute tolerance
-RTOL = 1.0e-5   # relative tolerance
-mxstep = 1000000  # Maximum internal steps per output
+#ATOL = 1.0e-10  # absolute tolerance
+#RTOL = 1.0e-5   # relative tolerance
+#mxstep = 1000000  # Maximum internal steps per output
 
-cvode_max_order = 2
-cvode_stability_limit_detection = true
+#cvode_max_order = 2
+#cvode_stability_limit_detection = true
 
 ##################################################
 # Electrostatic potential solver

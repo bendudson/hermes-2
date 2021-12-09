@@ -1,0 +1,17 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/lus/cls01095/work/e281/e281/hm1234/BOUT/dec21/BOUT-dev/**"
+            ],
+            "defines": [],
+            "compilerPath": "/opt/gcc/10.1.0/bin/gcc",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++14",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

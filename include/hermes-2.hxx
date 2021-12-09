@@ -48,6 +48,7 @@ private:
   // Equilibrium current
   Field2D Jpar0;
 
+  BoutReal nelim_floor; // Global density floor
   BoutReal nesheath_floor; // Density floor used in sheath boundary conditions
 
   // Evolving variables
@@ -142,6 +143,7 @@ private:
   bool sheath_closure; // Sheath closure sink on vorticity (if sinks = true)
   bool drift_wave;     // Drift-wave closure (if sinks=true)
 
+  bool slab_radial_buffers; // an alternatice radial buffer region for use in slab geometry
   bool radial_buffers; // Radial buffer regions
   int radial_inner_width; // Number of points in the inner radial buffer
   int radial_outer_width; // Number of points in the outer radial buffer
@@ -181,14 +183,16 @@ private:
   BoutReal numdiff, hyper, hyperpar; ///< Numerical dissipation
   int low_pass_z; // Fourier filter in Z 
   BoutReal z_hyper_viscos, x_hyper_viscos, y_hyper_viscos; // 4th-order derivatives
-  bool low_n_diffuse; // Diffusion in parallel direction at low density
-  bool low_n_diffuse_perp; // Diffusion in perpendicular direction at low density
+  BoutReal low_n_diffuse; // Diffusion in parallel direction at low density
+  BoutReal low_n_diffuse_perp; // Diffusion in perpendicular direction at low density
   BoutReal ne_hyper_z, pe_hyper_z; // Hyper-diffusion
+  BoutReal nvi_hyper_z, vepsi_hyper_z; // hyper-diffusion on ion terms
   BoutReal scale_num_cs; // Scale numerical sound speed
   BoutReal floor_num_cs; // Apply a floor to the numerical sound speed
   bool vepsi_dissipation; // Dissipation term in VePsi equation
   bool vort_dissipation; // Dissipation term in Vorticity equation
-  bool phi_dissipation; // Dissipation term in Vorticity equation, depending on phi
+  BoutReal phi_dissipation; // Dissipation term in Vorticity equation, depending on phi
+  BoutReal delp2_dissipation; // Dissipation using delp2
   
   // Sources and profiles
   

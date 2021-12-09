@@ -262,10 +262,10 @@ void alloc_all(Field3D &f) {
   setRegions(f);
 }
 
-#define GET_ALL(name)				\
-  auto * name##a = &name[Ind3D(0)];		\
-  auto * name##b = &name.yup()[Ind3D(0)];	\
-  auto * name##c = &name.yup()[Ind3D(0)];
+#define GET_ALL(name)                                                          \
+  auto *name##a = &name[Ind3D(0)];                                             \
+  auto *name##b = &name.yup()[Ind3D(0)];                                       \
+  auto *name##c = &name.ydown()[Ind3D(0)];
 
 #define DO_ALL(op, name)                                                       \
   template <class A, class B> Field3D name##_all(const A &a, const B &b) {     \

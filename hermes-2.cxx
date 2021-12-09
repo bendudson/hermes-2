@@ -2832,15 +2832,29 @@ int Hermes::rhs(BoutReal t) {
   if (classical_diffusion) {
     // Classical perpendicular diffusion
     // The only term here comes from the resistive drift
-    tauemimeSQB = mul_all(mul_all(tau_e, mi_me), B42);
-    Dn = div_all(add_all(Te, Ti), tauemimeSQB);
-    if(fci_transform){
-      // TODO: use all versions
-      Field3D Ne_tauB2 = div_all(Ne, tauemimeSQB);
-      TiTediff = sub_all(Ti, mul_all(0.5, Te));
-      ddt(Ne) += FV::Div_a_Laplace_perp(Dn, Ne);
-      ddt(Ne) += FV::Div_a_Laplace_perp(Ne_tauB2, TiTediff);
+    Field3D Ne_tauB2;
+    alloc_all(TiTediff);
+    alloc_all(tauemimeSQB);
+    alloc_all(Ne_tauB2);
+    alloc_all(Dn);
+    BOUT_FOR(i, Ne.getRegion("RGN_ALL")) {
+      tauemimeSQB[i] = tau_e[i] * mi_me * B42[i];
+      Dn[i] = (Te[i] + Ti[i]) / tauemimeSQB[i];
+      Ne_tauB2[i] = Ne[i] / tauemimeSQB[i];
+      TiTediff[i] = Ti[i] - (0.5 * Te[i]);
+
+      tauemimeSQB.yup()[i] = tau_e.yup()[i] * mi_me * B42.yup()[i];
+      Dn.yup()[i] = (Te.yup()[i] + Ti.yup()[i]) / tauemimeSQB.yup()[i];
+      Ne_tauB2.yup()[i] = Ne.yup()[i] / tauemimeSQB.yup()[i];
+      TiTediff.yup()[i] = Ti.yup()[i] - (0.5 * Te.yup()[i]);
+
+      tauemimeSQB.ydown()[i] = tau_e.ydown()[i] * mi_me * B42.ydown()[i];
+      Dn.ydown()[i] = (Te.ydown()[i] + Ti.ydown()[i]) / tauemimeSQB.ydown()[i];
+      Ne_tauB2.ydown()[i] = Ne.ydown()[i] / tauemimeSQB.ydown()[i];
+      TiTediff.ydown()[i] = Ti.ydown()[i] - (0.5 * Te.ydown()[i]);
     }
+    ddt(Ne) += FV::Div_a_Laplace_perp(Dn, Ne);
+    ddt(Ne) += FV::Div_a_Laplace_perp(Ne_tauB2, TiTediff);
   }
   if (anomalous_D > 0.0) {
     ddt(Ne) += FV::Div_a_Laplace_perp(a_d3d, Ne);

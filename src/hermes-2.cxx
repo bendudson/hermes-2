@@ -919,7 +919,7 @@ int Hermes::init(bool restarting) {
   }
 
   if (revCurlb_B) {
-    Curlb_B = -1.0 * Curlb_B
+    Curlb_B = -1.0 * Curlb_B;
   }
   
   if (Options::root()["mesh"]["paralleltransform"].as<std::string>() == "shifted") {

@@ -307,6 +307,10 @@ int Hermes::init(bool restarting) {
   poloidal_flows = optsc["poloidal_flows"]
                        .doc("Include ExB flows in X-Y plane")
                        .withDefault(true);
+
+  revCurlb_B = optsc["revCurlb_B"]
+                    .doc("Reverse the direction of Curl(b/B)")
+                    .withDefault(true);
   
   OPTION(optsc, ion_velocity, true);
 
@@ -522,6 +526,12 @@ int Hermes::init(bool restarting) {
   // Inflowing density carries momentum
   OPTION(optne, density_inflow, false);
 
+  auto& optpe = opt["Pe"];
+  PeSource = optpe["source"].withDefault(Field3D{0.0});
+
+  auto& optpi = opt["Pi"];
+  PiSource = optpi["source"].withDefault(Field3D{0.0});
+
   // radial buffer setup
   if (slab_radial_buffers || radial_buffers) {
     // Need to set the sources in the radial buffer regions to zero
@@ -585,13 +595,13 @@ int Hermes::init(bool restarting) {
   NeSource /= Omega_ci;
   Sn = DC(NeSource);
 
-  auto& optpe = opt["Pe"];
-  PeSource = optpe["source"].withDefault(Field3D{0.0});
+  // auto& optpe = opt["Pe"];
+  // PeSource = optpe["source"].withDefault(Field3D{0.0});
   PeSource /= Omega_ci;
   Spe = DC(PeSource);
 
-  auto& optpi = opt["Pi"];
-  PiSource = optpi["source"].withDefault(Field3D{0.0});
+  // auto& optpi = opt["Pi"];
+  // PiSource = optpi["source"].withDefault(Field3D{0.0});
   PiSource /= Omega_ci;
   Spi = DC(PiSource);
 
@@ -603,7 +613,7 @@ int Hermes::init(bool restarting) {
         for (int y = mesh->ystart; y <= mesh->yend; y++) {
           Sn(x, y) = 0.0;
           Spe(x, y) = 0.0;
-	  Spi(x, y) = 0.0;
+	        Spi(x, y) = 0.0;
         }
       }
     }
@@ -906,6 +916,10 @@ int Hermes::init(bool restarting) {
         Curlb_B = 0.0;
       }
     }
+  }
+
+  if (revCurlb_B) {
+    Curlb_B = -1.0 * Curlb_B
   }
   
   if (Options::root()["mesh"]["paralleltransform"].as<std::string>() == "shifted") {

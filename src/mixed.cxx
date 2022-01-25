@@ -64,6 +64,8 @@ NeutralMixed::NeutralMixed(Solver *solver, Mesh *UNUSED(mesh), Options &options)
   F = 0;
   Qi = 0;
   Rp = 0;
+
+  SAVE_REPEAT4(Riz, Rrc, Rcx, Rex);
 }
 
 void NeutralMixed::update(const Field3D &Ne, const Field3D &Te,
@@ -168,7 +170,6 @@ void NeutralMixed::update(const Field3D &Ne, const Field3D &Te,
   // Atomic processes
   TRACE("Atomic processes");
 
-  Field3D Riz, Rrc, Rcx, Rex;
   neutral_rates(Ne, Te, Ti, Vi, Nn, Tn, Vn, S, F, Qi, Rp, Riz, Rrc, Rcx, Rex);
 
   // Neutral cross-field diffusion coefficient

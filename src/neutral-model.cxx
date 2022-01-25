@@ -61,8 +61,6 @@ void NeutralModel::neutral_rates(
   Rcx = 0.0;
   Rex = 0.0;
 
-  SAVE_REPEAT4(Riz, Rrc, Rcx, Rex);
-
   Coordinates *coord = mesh->getCoordinates();
 
   for (int i = mesh->xstart; i <= mesh->xend; i++)

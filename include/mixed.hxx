@@ -33,6 +33,8 @@ private:
   Field3D Pnlim;  // Limited pressure, used to calculate pressure-driven diffusive flows
   Field3D Vn;
   Field3D Dnn;
+
+  Field3D Riz, Rrc, Rcx, Rex;
   
   bool sheath_ydown, sheath_yup;
   

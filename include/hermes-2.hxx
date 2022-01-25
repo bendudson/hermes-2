@@ -226,6 +226,7 @@ private:
   
   // Curvature, Grad-B drift
   Vector3D Curlb_B; // Curl(b/B)
+  bool revCurlb_B; // Reverse direction of Curl(b/B) vector
   
   // Perturbed parallel gradient operators
   const Field3D Grad_parP(const Field3D &f);

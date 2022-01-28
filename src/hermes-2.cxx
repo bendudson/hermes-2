@@ -306,11 +306,11 @@ int Hermes::init(bool restarting) {
 
   poloidal_flows = optsc["poloidal_flows"]
                        .doc("Include ExB flows in X-Y plane")
-                       .withDefault(true);
+                       .withDefault<bool>(true);
 
   revCurlb_B = optsc["revCurlb_B"]
                     .doc("Reverse the direction of Curl(b/B)")
-                    .withDefault(true);
+                    .withDefault<bool>(false);
   
   OPTION(optsc, ion_velocity, true);
 

@@ -257,6 +257,11 @@ int Hermes::init(bool restarting) {
 
   OPTION(optsc, evolve_plasma, true);
 
+  mesh->get(jyseps1_1, "jyseps1_1");
+  mesh->get(jyseps1_2, "jyseps1_2");
+  mesh->get(jyseps2_1, "jyseps2_1");
+  mesh->get(jyseps2_2, "jyseps2_2");
+
   electromagnetic = optsc["electromagnetic"]
                         .doc("Include vector potential psi in Ohm's law?")
                         .withDefault<bool>(true);
@@ -775,12 +780,22 @@ int Hermes::init(bool restarting) {
   impurity_adas = optsc["impurity_adas"]
                       .doc("Use Atomic++ interface to ADAS")
                       .withDefault<bool>(false);
+  
+  impurity_split = optsc["impurity_split"]
+                    .doc("Enable a region dependant fixed fraction")
+                    .withDefault<bool>(false);
 
   if (impurity_adas) {
 
-    fimp = optsc["impurity_fraction"]
+    if (impurity_split) {
+      OPTION(optsc, fimp_id, 0.0);
+      OPTION(optsc, fimp_od, 0.0);
+      OPTION(optsc, fimp_us, 0.0);
+    } else {
+      fimp = optsc["impurity_fraction"]
                .doc("Fixed fraction ADAS impurity, multiple of electron density")
                .withDefault(0.0);
+    }
 
     string impurity_species =
         optsc["impurity_species"]
@@ -4159,6 +4174,16 @@ int Hermes::rhs(BoutReal t) {
         BoutReal Ne_C = Ne[i],
           Ne_L = 0.5 * (Ne[i.ym()] + Ne[i]),
           Ne_R = 0.5 * (Ne[i] + Ne[i.yp()]);
+
+        if (impurity_split) {
+          if (mesh->getGlobalYIndexNoBoundaries(mesh->yend) < jyseps1_1) {
+            fimp = fimp_id;
+          } else if (mesh->getGlobalYIndexNoBoundaries(mesh->yend) > jyseps2_2) {
+            fimp = fimp_od;
+          } else {
+            fimp = fimp_us;
+          }
+        }
         
         BoutReal Rz_L = computeRadiatedPower(*impurity,
                                              Te_L * Tnorm,        // electron temperature [eV]

@@ -1125,7 +1125,7 @@ int Hermes::init(bool restarting) {
 	// Test new LaplaceXZ solver
 	newSolver = LaplaceXZ::create(bout::globals::mesh);
 	// Set coefficients for Boussinesq solve
-	newSolver->setCoefs(Field3D(1.0), Field3D(0.0));
+	newSolver->setCoefs(1. / SQ(coord->Bxy), Field3D(0.0));
       } else {
 	// Use older Laplacian solver
 	phiSolver = Laplacian::create(&opt["phiSolver"]);

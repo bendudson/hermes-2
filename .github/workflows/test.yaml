@@ -45,4 +45,11 @@ jobs:
       - name: Run
         run: |
           cd /home/boutuser/hermes-2
+          # Run only shortly
+          sed -e 's/nout = .*/nout = 1/' -i */BOUT.inp
+          sed -e 's/timestep = 100/timestep = 1/' -i */BOUT.inp
+          # Change solver type - beuler is quite heavy on setup, but we want
+          # to run only short
+          sed -e 's/type = beuler/type = pvode/' -i */BOUT.inp
           build/hermes-2 -d 1-lowres
+          build/hermes-2 -d 3-medium

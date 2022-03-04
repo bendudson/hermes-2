@@ -1296,6 +1296,7 @@ int Hermes::rhs(BoutReal t) {
   alloc_all(Te);
   alloc_all(Ti);
   alloc_all(Vi);
+  alloc_all(Pi);
   BOUT_FOR(i, Ne.getRegion("RGN_ALL")) {
     // Field3D Ne = floor_all(Ne, 1e-5);
     floor_all(Ne, 1e-5, i);

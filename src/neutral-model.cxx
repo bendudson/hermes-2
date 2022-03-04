@@ -48,7 +48,7 @@ void NeutralModel::neutral_rates(
     const Field3D &Vi, // Plasma quantities
     const Field3D &Nn, const Field3D &Tn, const Field3D &Vnpar, // Neutral gas
     Field3D &S, Field3D &F, Field3D &Qi, Field3D &R, // Transfer rates
-    Field3D &Riz, Field3D &Rrc, Field3D &Rcx) {      // Rates
+    Field3D &Riz, Field3D &Rrc, Field3D &Rcx, Field3D &Rex) {      // Rates
 
   // Allocate output fields
   S = 0.0;
@@ -59,6 +59,7 @@ void NeutralModel::neutral_rates(
   Riz = 0.0;
   Rrc = 0.0;
   Rcx = 0.0;
+  Rex = 0.0;
 
   Coordinates *coord = mesh->getCoordinates();
 
@@ -184,6 +185,27 @@ void NeutralModel::neutral_rates(
         BoutReal R_iz_R =
             Ne_R * Nn_R * hydrogen.ionisation(Te_R * Tnorm) * Nnorm / Fnorm;
 
+        // Excitation
+        if (h_excitation) {
+          /////////////////////////////////////////////////////////
+          // Electron-neutral excitation
+          // Note: Rates need checking
+          // Currently assuming that quantity calculated is in [eV m^3/s]
+
+          BoutReal R_ex_L = Ne_L * Nn_L *
+                            hydrogen.excitation(Te_L * Tnorm) * Nnorm /
+                            Fnorm / Tnorm;
+          BoutReal R_ex_C = Ne_C * Nn_C *
+                            hydrogen.excitation(Te_C * Tnorm) * Nnorm /
+                            Fnorm / Tnorm;
+          BoutReal R_ex_R = Ne_R * Nn_R *
+                            hydrogen.excitation(Te_R * Tnorm) * Nnorm /
+                            Fnorm / Tnorm;
+
+          Rex(i, j, k) = (J_L * R_ex_L + 4. * J_C * R_ex_C + J_R * R_ex_R) /
+                          (6. * J_C);
+        }
+
         // Neutral sink, plasma source
         S(i, j, k) -=
             (J_L * R_iz_L + 4. * J_C * R_iz_C + J_R * R_iz_R) / (6. * J_C);
@@ -200,6 +222,8 @@ void NeutralModel::neutral_rates(
                        (6. * J_C);
 
         // Ionisation and electron excitation energy
+
+
         R(i, j, k) += (Eionize / Tnorm) *
                       (J_L * R_iz_L + 4. * J_C * R_iz_C + J_R * R_iz_R) /
                       (6. * J_C);

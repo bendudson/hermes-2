@@ -6,3 +6,4 @@ BOUT.log.*
 *.pdf
 *~
 .BOUT.pid*
+.vscode/

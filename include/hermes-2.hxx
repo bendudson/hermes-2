@@ -45,9 +45,16 @@ protected:
   
   int precon(BoutReal t, BoutReal gamma, BoutReal delta);
 private:
+  // grid region boundaries
+  int jyseps1_1;
+  int jyseps1_2;
+  int jyseps2_1;
+  int jyseps2_2;
+
   // Equilibrium current
   Field2D Jpar0;
 
+  BoutReal nelim_floor; // Global density floor
   BoutReal nesheath_floor; // Density floor used in sheath boundary conditions
 
   // Evolving variables
@@ -90,6 +97,10 @@ private:
   // Impurity radiation
   BoutReal fimp;             // Impurity fraction (of Ne)
   bool impurity_adas;        // True if using ImpuritySpecies, false if using
+  bool impurity_split;       // Split the fixed fraction impurities by region
+  BoutReal fimp_id;          // fimp in the inner divertor (0 -> jyseps1_1)
+  BoutReal fimp_od;          // fimp in the outer divertor (jyseps2_2 -> -1)
+  BoutReal fimp_us;          // fimp in the upstream (between jyseps1_1 and jyseps2_2)
   ImpuritySpecies *impurity; // Atomicpp impurity
   
   BoutReal carbon_fraction;
@@ -142,6 +153,7 @@ private:
   bool sheath_closure; // Sheath closure sink on vorticity (if sinks = true)
   bool drift_wave;     // Drift-wave closure (if sinks=true)
 
+  bool slab_radial_buffers; // an alternatice radial buffer region for use in slab geometry
   bool radial_buffers; // Radial buffer regions
   int radial_inner_width; // Number of points in the inner radial buffer
   int radial_outer_width; // Number of points in the outer radial buffer
@@ -181,14 +193,16 @@ private:
   BoutReal numdiff, hyper, hyperpar; ///< Numerical dissipation
   int low_pass_z; // Fourier filter in Z 
   BoutReal z_hyper_viscos, x_hyper_viscos, y_hyper_viscos; // 4th-order derivatives
-  bool low_n_diffuse; // Diffusion in parallel direction at low density
-  bool low_n_diffuse_perp; // Diffusion in perpendicular direction at low density
+  BoutReal low_n_diffuse; // Diffusion in parallel direction at low density
+  BoutReal low_n_diffuse_perp; // Diffusion in perpendicular direction at low density
   BoutReal ne_hyper_z, pe_hyper_z; // Hyper-diffusion
+  BoutReal nvi_hyper_z, vepsi_hyper_z; // hyper-diffusion on ion terms
   BoutReal scale_num_cs; // Scale numerical sound speed
   BoutReal floor_num_cs; // Apply a floor to the numerical sound speed
   bool vepsi_dissipation; // Dissipation term in VePsi equation
   bool vort_dissipation; // Dissipation term in Vorticity equation
-  bool phi_dissipation; // Dissipation term in Vorticity equation, depending on phi
+  BoutReal phi_dissipation; // Dissipation term in Vorticity equation, depending on phi
+  BoutReal delp2_dissipation; // Dissipation using delp2
   
   // Sources and profiles
   
@@ -222,6 +236,7 @@ private:
   
   // Curvature, Grad-B drift
   Vector3D Curlb_B; // Curl(b/B)
+  bool revCurlb_B; // Reverse direction of Curl(b/B) vector
   
   // Perturbed parallel gradient operators
   const Field3D Grad_parP(const Field3D &f);

@@ -9,7 +9,7 @@ ShiftWithoutTwist=false
 MYG=1
 MXG=2
 
-grid = "grids/W7X-conf4-132x16x512.fci.f1.nc"
+grid = "grids/W7X-conf4-132x16x512.fci.f2.nc"
 
 NXPE=1
 

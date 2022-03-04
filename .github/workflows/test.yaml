@@ -3,30 +3,41 @@ on: [push]
 
 jobs:
   standard_tests:
+    name: Tests with ${{ matrix.config.name }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     container:
-      image: oi4ai/bout3d:db-outer-${{ matrix.mode }}
+      image: oi4ai/bout3d:db-outer-${{ matrix.config.mode }}
     strategy:
       fail-fast: true
       matrix:
-        mode: [opt, debug]
+        config:
+          - name: debugging
+            mode: debug
+          - name: optimisations
+            mode: opt
     steps:
       - name: Job information
         run: |
           echo Build: ${{ matrix.config.name }}, ${{ matrix.config.os }}
           echo CMake options: ${{ matrix.config.cmake_options }}
-          uname -a
           cat /etc/os-release
 
-      - uses: actions/checkout@v2
-        with:
-          submodules: true
+      - name: Checkout hermes-2
+        run: |
+          cd /home/boutuser/
+          git clone ${{ github.server_url }}/${{ github.repository }} -b ${{ github.ref_name }}
+          cd hermes-2
+          git checkout ${{ github.sha }}
+
       - name: Build
         run: |
+          cd /home/boutuser/hermes-2
           cmake --version
           cmake -S . -B build -Dbout++_DIR=/home/boutuser/BOUT-dev/build
           make -C build -j 2
+
       - name: Run
         run: |
+          cd /home/boutuser/hermes-2
           build/hermes-2 -d 1-lowres

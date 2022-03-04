@@ -23,12 +23,17 @@ jobs:
           echo CMake options: ${{ matrix.config.cmake_options }}
           cat /etc/os-release
 
+      - name: Setup dependencies
+        run: |
+          sudo dnf install -y git-lfs
+
       - name: Checkout hermes-2
         run: |
           cd /home/boutuser/
-          git clone ${{ github.server_url }}/${{ github.repository }} -b ${{ github.ref_name }}
+          git clone ${{ github.server_url }}/${{ github.repository }} -b ${{ github.ref_name }} hermes-2
           cd hermes-2
           git checkout ${{ github.sha }}
+          git submodule update --init --recursive
 
       - name: Build
         run: |

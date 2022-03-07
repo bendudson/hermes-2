@@ -680,6 +680,8 @@ int Hermes::init(bool restarting) {
       alpha_dw = fact.create2D("Hermes:alpha_dw");
       SAVE_ONCE(alpha_dw);
     }
+  } else {
+    optsc["sink_invlpar"].setConditionallyUsed();
   }
 
   // Get switches from each variable section
@@ -1089,7 +1091,11 @@ int Hermes::init(bool restarting) {
 
   //////////////////////////////////////////////////////////////
   // Electromagnetic fields
-  
+
+  opt["phiSolver"].setConditionallyUsed();
+  optsc["newXZsolver"].setConditionallyUsed();
+  optsc["split_n0"].setConditionallyUsed();
+  optsc["split_n0_psi"].setConditionallyUsed();
   if (j_par | j_diamag) {
     // Only needed if there are any currents
     SAVE_REPEAT(phi);
@@ -1104,8 +1110,6 @@ int Hermes::init(bool restarting) {
     OPTION(optsc, split_n0, false); // Split into n=0 and n~=0
     OPTION(optsc, split_n0_psi, split_n0);
     // Phi solver
-    opt["phiSolver"].setConditionallyUsed();
-    optsc["newXZsolver"].setConditionallyUsed();
     if (phi3d) {
 #ifdef PHISOLVER
       phiSolver3D = Laplace3D::create();
@@ -1251,6 +1255,7 @@ int Hermes::init(bool restarting) {
   opt["phiSolver"].setConditionallyUsed();
   opt["Vort"].setConditionallyUsed();
   opt["VePsi"].setConditionallyUsed();
+  optsc["neutral_gamma"].setConditionallyUsed();
 
   alloc_all(Te);
   alloc_all(Ti);

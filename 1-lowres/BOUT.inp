@@ -10,7 +10,7 @@ ShiftWithoutTwist = false
 MYG = 1
 MXG = 2
 
-grid = "rotating-ellipse-36x8x32-ix20.fci.nc"
+grid = "grids/rotating-ellipse-36x8x32-ix20.fci.nc"
 
 NXPE = 1
 

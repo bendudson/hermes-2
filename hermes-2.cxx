@@ -1301,6 +1301,7 @@ int Hermes::rhs(BoutReal t) {
   alloc_all(Te);
   alloc_all(Ti);
   alloc_all(Vi);
+  alloc_all(Pi);
   BOUT_FOR(i, Ne.getRegion("RGN_ALL")) {
     // Field3D Ne = floor_all(Ne, 1e-5);
     floor_all(Ne, 1e-5, i);
@@ -2127,7 +2128,7 @@ int Hermes::rhs(BoutReal t) {
   if (parallel_sheaths){
     switch (par_sheath_model) {
     case 0 :{
-      for (const auto &bndry_par : mesh->getBoundariesPar(Mesh::BoundaryParType::xout)) {
+      for (const auto &bndry_par : mesh->getBoundariesPar(BoundaryParType::xout)) {
 	for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
 	  int x = bndry_par->x; int y = bndry_par->y; int z = bndry_par->z;
 	  // output.write("x: {},y: {},z: {}\n", x,y,z);
@@ -2197,7 +2198,7 @@ int Hermes::rhs(BoutReal t) {
       break;
     }
     case 1:{ //insulating boundary
-      for (const auto &bndry_par : mesh->getBoundariesPar(Mesh::BoundaryParType::xout)) {
+      for (const auto &bndry_par : mesh->getBoundariesPar(BoundaryParType::xout)) {
 	for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
 	  int x = bndry_par->x; int y = bndry_par->y; int z = bndry_par->z;
 	  // Zero-gradient density
@@ -3375,7 +3376,7 @@ int Hermes::rhs(BoutReal t) {
     if (parallel_sheaths){
       sheath_dpe = 0.;
 
-      for (const auto &bndry_par : mesh->getBoundariesPar(Mesh::BoundaryParType::xout)) {
+      for (const auto &bndry_par : mesh->getBoundariesPar(BoundaryParType::xout)) {
 	for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
 	  int x = bndry_par->x; int y = bndry_par->y; int z = bndry_par->z;
 	  // Temperature and density at the sheath entrance
@@ -3790,7 +3791,7 @@ int Hermes::rhs(BoutReal t) {
     if (parallel_sheaths){
       sheath_dpi = 0.0;
 
-      for (const auto &bndry_par : mesh->getBoundariesPar(Mesh::BoundaryParType::xout)) {
+      for (const auto &bndry_par : mesh->getBoundariesPar(BoundaryParType::xout)) {
 	for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
 	  int x = bndry_par->x; int y = bndry_par->y; int z = bndry_par->z;
 	  // Temperature and density at the sheath entrance

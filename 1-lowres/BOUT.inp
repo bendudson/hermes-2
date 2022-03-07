@@ -5,19 +5,19 @@ timestep = 100
 twistshift = false  # use twist-shift condition?
 ballooning = false  # ballooning transformation?
 shiftinitial = false
-ShiftWithoutTwist=false
+ShiftWithoutTwist = false
 
-MYG=1
-MXG=2
+MYG = 1
+MXG = 2
 
 grid = "rotating-ellipse-36x8x32-ix20.fci.nc"
 
-NXPE=1
+NXPE = 1
 
 dump_format = nc
 
 [restart_files]
-init_missing=true # initialize missing variables on restart?
+init_missing = true # initialize missing variables on restart?
 
 [mesh]
 symmetricGlobalX = true
@@ -30,19 +30,19 @@ type = fci
 ##################################################
 # derivative methods
 
-[ddx]
+[mesh:ddx]
 
 first = C2
 second = C2
 upwind = W3
 
-[ddy]
+[mesh:ddy]
 
 first = C2
 second = C2
 upwind = W3
 
-[ddz]
+[mesh:ddz]
 
 first = C2
 second = C2
@@ -73,7 +73,7 @@ nonuniform = true
 # Electrostatic potential solver
 
 [phiSolver]
-type   = petsc  # Needed if Boussinesq = false
+type = petsc  # Needed if Boussinesq = false
 ksptype = gmres # Linear iterative method
 pctype = lu # Preconditioner. Direct "lu" or "ilu"; iterative "jacobi", "sor"
 
@@ -184,7 +184,7 @@ thermal_flux   = false
 thermal_force  = false
 electron_ion_transfer = false
 electron_viscosity = false
-ion_viscosity  = false  # Ion parallel viscosity
+ion_viscosity = false  # Ion parallel viscosity
 thermal_conduction = false
 
 frecycle = 0.0  # Neutral gas recycling fraction
@@ -233,7 +233,7 @@ sheath_ydown = true
 sheath_allow_supersonic = false
 sheath_gamma_e = 4   # Electron sheath heat transmission
 sheath_gamma_i = 2.5 # Ion sheath heat transmission
-parallel_sheath = true
+parallel_sheaths = true
 neutral_gamma = 0.0
 
 startprofiles = false
@@ -259,7 +259,7 @@ AA = 1  # Atomic mass. 1 = Hydrogen, 2 = Deuterium
 type = none    # Neutral model: none, diffusion2d, recycling, fullvelocity, mixed
 viscosity = 1  # Dynamic viscosity
 bulk = 0       # Bulk (volume) viscosity
-conduction = 1 
+conduction = 1
 neutral_gamma = 0.0
 
 nn_floor = 1e-2  # Floor applied when calculating Vn = NVn / Nn
@@ -287,7 +287,7 @@ bndry_xin = neumann_o2
 #dirichlet(0.1)
 
 [Vort]
-scale=0
+scale = 0
 function = sin(7*z)*sin(3*x-z)*gauss(-x,0.21)*(1+sin(y))#mixmode(y)
 bndry_all = dirichlet_o2
 
@@ -311,12 +311,12 @@ source = Ne:source
 # bndry_xin = dirichlet(1)
 
 [Ve]
-parallel_bndry_yup=1
-parallel_bndry_ydown=-1
+parallel_bndry_yup = 1
+parallel_bndry_ydown = -1
 
 [Jpar]
-parallel_bndry_yup=1
-parallel_bndry_ydown=-1
+parallel_bndry_yup = 1
+parallel_bndry_ydown = -1
 
 [phi]
 # Radial boundaries determined by Laplacian inversion
@@ -360,4 +360,3 @@ bndry_all = neumann_o2
 
 [NVn]
 bndry_all = dirichlet_o2
-

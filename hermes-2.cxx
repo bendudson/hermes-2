@@ -925,6 +925,8 @@ int Hermes::init(bool restarting) {
   // Set normalisations
   if (neutrals) {
     neutrals->setNormalisation(Tnorm, Nnorm, Bnorm, rho_s0, Omega_ci);
+  } else {
+    opt["neutral"].setConditionallyUsed();
   }
 
   /////////////////////////////////////////////////////////
@@ -1093,6 +1095,10 @@ int Hermes::init(bool restarting) {
   // Electromagnetic fields
 
   opt["phiSolver"].setConditionallyUsed();
+  opt["aparSolver"].setConditionallyUsed();
+  opt["laplace"].setConditionallyUsed();
+  opt["laplacexy"].setConditionallyUsed();
+  opt["laplacexz"].setConditionallyUsed();
   optsc["newXZsolver"].setConditionallyUsed();
   optsc["split_n0"].setConditionallyUsed();
   optsc["split_n0_psi"].setConditionallyUsed();
@@ -1242,6 +1248,8 @@ int Hermes::init(bool restarting) {
     }
   }
 
+  opt["Jpar"].setConditionallyUsed();
+  opt["Ve"].setConditionallyUsed();
   opt["Pn"].setConditionallyUsed();
   opt["Nn"].setConditionallyUsed();
   opt["NVn"].setConditionallyUsed();

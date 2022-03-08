@@ -1440,7 +1440,7 @@ int Hermes::rhs(BoutReal t) {
     }
   }
   sound_speed.applyBoundary("neumann");
-  
+
   //////////////////////////////////////////////////////////////
   // Calculate electrostatic potential phi
   //
@@ -1656,6 +1656,7 @@ int Hermes::rhs(BoutReal t) {
       }
     }
     phi.applyBoundary(t);
+#warning no parallel phi boundaries needed?
     mesh->communicate(phi);
   }
 
@@ -2242,6 +2243,35 @@ int Hermes::rhs(BoutReal t) {
 	    2. * nesheath * visheath - NVi(x, y, z);
 	}
       }
+
+      const int ny = mesh->LocalNy;
+      const int nz = mesh->LocalNz;
+      for (const auto &bndry_par :
+           mesh->getBoundariesPar(BoundaryParType::xin)) {
+        for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
+          const Ind3D i{(bndry_par->x * ny + bndry_par->y) * nz + bndry_par->z,
+                        ny, nz};
+          const auto inext = i.yp(bndry_par->dir);
+
+          // Neumann conditions
+          Ne.ynext(bndry_par->dir)[inext] = Ne[i];
+          phi.ynext(bndry_par->dir)[inext] = phi[i];
+          Vort.ynext(bndry_par->dir)[inext] = Vort[i];
+
+          // Here zero-gradient Te, heat flux applied later
+          Te.ynext(bndry_par->dir)[inext] = Te[i];
+          Ti.ynext(bndry_par->dir)[inext] = Ti[i];
+
+          Pe.ynext(bndry_par->dir)[inext] = Pe[i];
+          Pi.ynext(bndry_par->dir)[inext] = Pi[i];
+
+          // // Dirichlet conditions
+          Vi.ynext(bndry_par->dir)[inext] = -Vi[i];
+          Ve.ynext(bndry_par->dir)[inext] = -Ve[i];
+          Jpar.ynext(bndry_par->dir)[inext] = -Jpar[i];
+          NVi.ynext(bndry_par->dir)[inext] = -NVi[i];
+        }
+      }
       break;
     }
     case 1:{ //insulating boundary
@@ -2339,9 +2369,10 @@ int Hermes::rhs(BoutReal t) {
       break;
     }
     }
+  } else {
+    throw BoutException("parallel BCs are needed!");
   }
-  
-  
+
   if (!currents) {
     // No currents, so reset Ve to be equal to Vi
     // VePsi also reset, so saved in restart file correctly
@@ -2513,7 +2544,10 @@ int Hermes::rhs(BoutReal t) {
     apply_flux_bcs(kappa_epar, kappa_ipar);
   }
 
-  if(currents){ nu.applyBoundary(t); }
+  if (currents) {
+    nu.applyBoundary(t);
+    nu.applyParallelBoundary("parallel_neumann");
+  }
 
   if (ion_viscosity) {
     ASSERT0(false); // not implemented - ask Brendan

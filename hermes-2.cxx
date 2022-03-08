@@ -2479,7 +2479,6 @@ int Hermes::rhs(BoutReal t) {
 	kappa_ipar(r.ind, mesh->ystart - 1, jz) = kappa_ipar(r.ind, mesh->ystart, jz);
       }
     }
-    
     for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
       for (int jz = 0; jz < mesh->LocalNz; jz++) {
         ASSERT0(fci_transform == false);
@@ -2487,7 +2486,27 @@ int Hermes::rhs(BoutReal t) {
 	kappa_ipar(r.ind, mesh->yend + 1, jz) = kappa_ipar(r.ind, mesh->yend, jz);
       }
     }
+
+    const int ny = mesh->LocalNy;
+    const int nz = mesh->LocalNz;
+    for (const auto &bndry_par : mesh->getBoundariesPar(BoundaryParType::xout)) {
+      for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
+	const Ind3D i{(bndry_par->x*ny+bndry_par->y)*nz+bndry_par->z, ny, nz};
+	const auto inext = i.yp(bndry_par->dir);
+	kappa_epar.ynext(bndry_par->dir)[inext] = kappa_epar[i];
+	kappa_ipar.ynext(bndry_par->dir)[inext] = kappa_ipar[i];
+      }
+    }
+    for (const auto &bndry_par : mesh->getBoundariesPar(BoundaryParType::xin)) {
+      for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
+	const Ind3D i{(bndry_par->x*ny+bndry_par->y)*nz+bndry_par->z, ny, nz};
+	const auto inext = i.yp(bndry_par->dir);
+	kappa_epar.ynext(bndry_par->dir)[inext] = -kappa_epar[i];
+	kappa_ipar.ynext(bndry_par->dir)[inext] = -kappa_ipar[i];
+      }
+    }
   }
+  
 
   if(currents){ nu.applyBoundary(t); }
 

@@ -406,6 +406,45 @@ Field3D withBoundary(Field3D &&f, const Field3D &bndry) {
   return f;
 }
 
+void apply_flux_bcs(Field3D &f1, Field3D &f2) {
+  // Boundary conditions on fluxes:
+  //  * Zero gradient on the targets
+  //  * Zero value on upstream conditions
+  const auto mesh = f1.getMesh();
+  for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
+    for (int jz = 0; jz < mesh->LocalNz; jz++) {
+      f1(r.ind, mesh->ystart - 1, jz) = f1(r.ind, mesh->ystart, jz);
+      f2(r.ind, mesh->ystart - 1, jz) = f2(r.ind, mesh->ystart, jz);
+    }
+  }
+  for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
+    for (int jz = 0; jz < mesh->LocalNz; jz++) {
+      f1(r.ind, mesh->yend + 1, jz) = f1(r.ind, mesh->yend, jz);
+      f2(r.ind, mesh->yend + 1, jz) = f2(r.ind, mesh->yend, jz);
+    }
+  }
+  const int ny = mesh->LocalNy;
+  const int nz = mesh->LocalNz;
+  for (const auto &bndry_par : mesh->getBoundariesPar(BoundaryParType::xout)) {
+    for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
+      const Ind3D i{(bndry_par->x * ny + bndry_par->y) * nz + bndry_par->z, ny,
+                    nz};
+      const auto inext = i.yp(bndry_par->dir);
+      f1.ynext(bndry_par->dir)[inext] = f1[i];
+      f2.ynext(bndry_par->dir)[inext] = f2[i];
+    }
+  }
+  for (const auto &bndry_par : mesh->getBoundariesPar(BoundaryParType::xin)) {
+    for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
+      const Ind3D i{(bndry_par->x * ny + bndry_par->y) * nz + bndry_par->z, ny,
+                    nz};
+      const auto inext = i.yp(bndry_par->dir);
+      f1.ynext(bndry_par->dir)[inext] = -f1[i];
+      f2.ynext(bndry_par->dir)[inext] = -f2[i];
+    }
+  }
+}
+
 int Hermes::init(bool restarting) {
 
   auto& opt = Options::root();
@@ -2471,42 +2510,8 @@ int Hermes::rhs(BoutReal t) {
     // Ion parallel heat conduction
     kappa_ipar = mul_all(mul_all(mul_all(3.9, Ti), Ne), tau_i);
 
-    // Boundary conditions on heat conduction coefficients
-    for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        ASSERT0(fci_transform == false);
-        kappa_epar(r.ind, mesh->ystart - 1, jz) = kappa_epar(r.ind, mesh->ystart, jz);
-	kappa_ipar(r.ind, mesh->ystart - 1, jz) = kappa_ipar(r.ind, mesh->ystart, jz);
-      }
-    }
-    for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        ASSERT0(fci_transform == false);
-        kappa_epar(r.ind, mesh->yend + 1, jz) = kappa_epar(r.ind, mesh->yend, jz);
-	kappa_ipar(r.ind, mesh->yend + 1, jz) = kappa_ipar(r.ind, mesh->yend, jz);
-      }
-    }
-
-    const int ny = mesh->LocalNy;
-    const int nz = mesh->LocalNz;
-    for (const auto &bndry_par : mesh->getBoundariesPar(BoundaryParType::xout)) {
-      for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
-	const Ind3D i{(bndry_par->x*ny+bndry_par->y)*nz+bndry_par->z, ny, nz};
-	const auto inext = i.yp(bndry_par->dir);
-	kappa_epar.ynext(bndry_par->dir)[inext] = kappa_epar[i];
-	kappa_ipar.ynext(bndry_par->dir)[inext] = kappa_ipar[i];
-      }
-    }
-    for (const auto &bndry_par : mesh->getBoundariesPar(BoundaryParType::xin)) {
-      for (bndry_par->first(); !bndry_par->isDone(); bndry_par->next()) {
-	const Ind3D i{(bndry_par->x*ny+bndry_par->y)*nz+bndry_par->z, ny, nz};
-	const auto inext = i.yp(bndry_par->dir);
-	kappa_epar.ynext(bndry_par->dir)[inext] = -kappa_epar[i];
-	kappa_ipar.ynext(bndry_par->dir)[inext] = -kappa_ipar[i];
-      }
-    }
+    apply_flux_bcs(kappa_epar, kappa_ipar);
   }
-  
 
   if(currents){ nu.applyBoundary(t); }
 

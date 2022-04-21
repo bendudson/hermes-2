@@ -175,7 +175,7 @@ void NeutralMixed::update(const Field3D &Ne, const Field3D &Te,
   // Neutral cross-field diffusion coefficient
   BoutReal neutral_lmax = 0.1 / Lnorm;
   Field3D Rnn = Nn * sqrt(Tn) / neutral_lmax; // Neutral-neutral collisions
-  Dnn = Pnlim / (Riz + Rcx + Rnn + Rex);
+  Dnn = Pnlim / (Riz + Rcx + Rnn);
 
   mesh->communicate(Dnn);
   Dnn.clearParallelSlices();

@@ -404,6 +404,8 @@ int Hermes::init(bool restarting) {
   
   OPTION(optsc, nelim_floor, 1e-5);
   nesheath_floor = optsc["nesheath_floor"].doc("Ne sheath lower limit").withDefault(nelim_floor);
+  kappa_epar_floor = optsc["kappa_epar_floor"].doc("kappa_epar lower limit").withDefault(1.0);
+
 
   // Fix profiles in SOL
   OPTION(optsc, sol_fix_profiles, false);
@@ -1464,7 +1466,7 @@ int Hermes::rhs(BoutReal t) {
         // Solve Helmholtz equation for psi
 
         // aparSolver->setCoefA(-Ne*0.5*mi_me*beta_e);
-        Field2D NDC = DC(Ne);
+        Field2D NDC = DC(Nelim);
         aparSolver->setCoefs(1.0, -NDC * 0.5 * mi_me * beta_e);
         // aparSolver->setCoefs(1.0, -Ne*0.5*mi_me*beta_e);
         if (split_n0_psi) {
@@ -4037,6 +4039,23 @@ int Hermes::rhs(BoutReal t) {
             f = D * (Vort(i + 1, j, k) - Vort(i, j, k));
             ddt(Vort)(i, j, k) += f * x_factor;
             ddt(Vort)(i + 1, j, k) -= f * xp_factor;
+
+            // Delp2 dissipation terms
+            f = D * (Pe(i + 1, j, k) - Pe(i, j, k));
+            ddt(Pe)(i, j, k) += Delp2(Pe)(i, j, k) * x_factor * f;
+            ddt(Pe)(i + 1, j, k) -= Delp2(Pe)(i, j, k) * xp_factor * f;
+
+            f = D * (Pi(i + 1, j, k) - Pi(i, j, k));
+            ddt(Pi)(i, j, k) += Delp2(Pi)(i, j, k) * x_factor * f;
+            ddt(Pi)(i + 1, j, k) -= Delp2(Pi)(i, j, k) * xp_factor* f;
+
+            f = D * (Ne(i + 1, j, k) - Ne(i, j, k));
+            ddt(Ne)(i, j, k) += Delp2(Ne)(i, j, k) * x_factor * f;
+            ddt(Ne)(i + 1, j, k) -= Delp2(Ne)(i, j, k) * xp_factor* f;
+
+            f = D * (NVi(i + 1, j, k) - NVi(i, j, k));
+            ddt(NVi)(i, j, k) += Delp2(NVi)(i, j, k) * x_factor * f;
+            ddt(NVi)(i + 1, j, k) -= Delp2(NVi)(i, j, k) * xp_factor* f;
           }
         }
       }
@@ -4317,6 +4336,7 @@ int Hermes::precon(BoutReal t, BoutReal gamma, BoutReal delta) {
   }
   if (thermal_conduction) {
     // Set the coefficient in front of Grad2_par2
+    kappa_epar = floor(kappa_epar, kappa_epar_floor);
     inv->setCoefB(-(2. / 3) * gamma * kappa_epar);
     Field3D dT = ddt(Pe);
     dT.applyBoundary("neumann");

@@ -56,6 +56,7 @@ private:
 
   BoutReal nelim_floor; // Global density floor
   BoutReal nesheath_floor; // Density floor used in sheath boundary conditions
+  BoutReal kappa_epar_floor; // Electron heat conductivity floor
 
   // Evolving variables
   Field3D Ne;         // Electron density

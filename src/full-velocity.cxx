@@ -327,7 +327,7 @@ void FullVelocity::update(const Field3D &Ne, const Field3D &Te,
   Field3D Riz, Rrc, Rcx, Rex;
   neutral_rates(Ne, Te, Ti, Vi, Nn, Tn, Vnpar, S, F, Qi, Rp, Riz, Rrc, Rcx, Rex);
 
-  Fperp = Rrc + Rcx + Rex; // Friction for vorticity
+  Fperp = Rrc + Rcx; // Friction for vorticity
 
   // Loss of momentum in the X and Z directions
   ddt(Vn2D).x -= (DC(Rcx) + DC(Riz)) * Vn2D.x / Nn2D_floor;

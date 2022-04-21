@@ -228,6 +228,9 @@ void NeutralModel::neutral_rates(
                       (J_L * R_iz_L + 4. * J_C * R_iz_C + J_R * R_iz_R) /
                       (6. * J_C);
 
+        // Add the hydrogen excitation rates to the overall total
+        R(i, j, k) += Rex(i, j, k); 
+
         // Cell-averaged rate
         Riz(i, j, k) =
             (J_L * R_iz_L + 4. * J_C * R_iz_C + J_R * R_iz_R) / (6. * J_C);

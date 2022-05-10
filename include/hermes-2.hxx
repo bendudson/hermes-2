@@ -98,7 +98,7 @@ private:
   // Impurity radiation
   BoutReal fimp;             // Impurity fraction (of Ne)
   bool impurity_adas;        // True if using ImpuritySpecies, false if using
-  bool impurity_split;       // Split the fixed fraction impurities by region
+  bool impurity_split_y;       // Split the fixed fraction impurities by region
   BoutReal fimp_id;          // fimp in the inner divertor (0 -> jyseps1_1)
   BoutReal fimp_od;          // fimp in the outer divertor (jyseps2_2 -> -1)
   BoutReal fimp_us;          // fimp in the upstream (between jyseps1_1 and jyseps2_2)

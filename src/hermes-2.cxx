@@ -783,7 +783,7 @@ int Hermes::init(bool restarting) {
                       .doc("Use Atomic++ interface to ADAS")
                       .withDefault<bool>(false);
   
-  impurity_split = optsc["impurity_split"]
+  impurity_split_y = optsc["impurity_split_y"]
                     .doc("Enable a region dependant fixed fraction")
                     .withDefault<bool>(false);
 
@@ -3909,6 +3909,12 @@ int Hermes::rhs(BoutReal t) {
     Field2D NeDC = DC(Ne);
     Field2D VortDC = DC(Vort);
 
+    // Store Field3D Delp2 terms outside of loops for optimisation
+    Field3D Delp2_Pe = Delp2(Pe);
+    Field3D Delp2_Pi = Delp2(Pi);
+    Field3D Delp2_Ne = Delp2(Ne);
+    Field3D Delp2_NVi = Delp2(NVi);
+
     if ((mesh->getGlobalXIndex(mesh->xstart) - mesh->xstart) < radial_inner_width) {
       // This processor contains points inside the inner radial boundary
 
@@ -3967,9 +3973,17 @@ int Hermes::rhs(BoutReal t) {
             ddt(Pi)(i, j, k) += f * x_factor;
             ddt(Pi)(i + 1, j, k) -= f * xp_factor;
 
-            // f = D * (Vort(i + 1, j, k) - Vort(i, j, k));
-            // ddt(Vort)(i, j, k) += f * x_factor;
-            // ddt(Vort)(i + 1, j, k) -= f * xp_factor;
+            f = D * (Vort(i + 1, j, k) - Vort(i, j, k));
+            ddt(Vort)(i, j, k) += f * x_factor;
+            ddt(Vort)(i + 1, j, k) -= f * xp_factor;
+
+            // finite difference dissipation applied for simplicity as 
+            // conservation not strictly necessary here (hopefully)
+            ddt(Pe)(i, j, k) += Delp2_Pe(i, j, k) * D;
+            ddt(Pi)(i, j, k) += Delp2_Pi(i, j, k) * D;
+            ddt(Ne)(i, j, k) += Delp2_Ne(i, j, k) * D;
+            ddt(NVi)(i, j, k) += Delp2_NVi(i, j, k) * D;
+
           }
         }
       }
@@ -4041,23 +4055,11 @@ int Hermes::rhs(BoutReal t) {
             ddt(Vort)(i, j, k) += f * x_factor;
             ddt(Vort)(i + 1, j, k) -= f * xp_factor;
 
-            // Delp2 dissipation terms applied differnetly to above which uses a
-            // finite volume implementation of radial second derivatives
-            // f = D // * (Pe(i + 1, j, k) - Pe(i, j, k));
-            ddt(Pe)(i, j, k) += Delp2(Pe)(i, j, k) * D; // x_factor * f;
-            // ddt(Pe)(i + 1, j, k) -= Delp2(Pe)(i, j, k) * xp_factor * f;
-
-            // f = D // * (Pi(i + 1, j, k) - Pi(i, j, k));
-            ddt(Pi)(i, j, k) += Delp2(Pi)(i, j, k) * D; // x_factor * f;
-            // ddt(Pi)(i + 1, j, k) -= Delp2(Pi)(i, j, k) * xp_factor* f;
-
-            // f = D // * (Ne(i + 1, j, k) - Ne(i, j, k));
-            ddt(Ne)(i, j, k) += Delp2(Ne)(i, j, k) * D; // x_factor * f;
-            // ddt(Ne)(i + 1, j, k) -= Delp2(Ne)(i, j, k) * xp_factor* f;
-
-            // f = D // * (NVi(i + 1, j, k) - NVi(i, j, k));
-            ddt(NVi)(i, j, k) += Delp2(NVi)(i, j, k) * D; // x_factor * f;
-            // ddt(NVi)(i + 1, j, k) -= Delp2(NVi)(i, j, k) * xp_factor* f;
+            // finite difference delp2 dissipation
+            ddt(Pe)(i, j, k) += Delp2(Pe)(i, j, k) * D;
+            ddt(Pi)(i, j, k) += Delp2(Pi)(i, j, k) * D;
+            ddt(Ne)(i, j, k) += Delp2(Ne)(i, j, k) * D;
+            ddt(NVi)(i, j, k) += Delp2(NVi)(i, j, k) * D;
           }
         }
       }

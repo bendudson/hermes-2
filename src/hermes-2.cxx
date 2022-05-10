@@ -789,7 +789,7 @@ int Hermes::init(bool restarting) {
 
   if (impurity_adas) {
 
-    if (impurity_split) {
+    if (impurity_split_y) {
       OPTION(optsc, fimp_id, 0.0);
       OPTION(optsc, fimp_od, 0.0);
       OPTION(optsc, fimp_us, 0.0);
@@ -3999,7 +3999,8 @@ int Hermes::rhs(BoutReal t) {
             0.5;
 
         // Diffusion coefficient which increases towards the boundary
-        BoutReal D = radial_buffer_D * (1. - pos / radial_outer_width);
+        // BoutReal D = radial_buffer_D * (1. - pos / radial_outer_width);
+        BoutReal D = radial_buffer_D * SQ((1. - pos / radial_outer_width));
 
         for (int j = mesh->ystart; j <= mesh->yend; ++j) {
           BoutReal dx = coord->dx(i, j);
@@ -4040,22 +4041,23 @@ int Hermes::rhs(BoutReal t) {
             ddt(Vort)(i, j, k) += f * x_factor;
             ddt(Vort)(i + 1, j, k) -= f * xp_factor;
 
-            // Delp2 dissipation terms
-            f = D * (Pe(i + 1, j, k) - Pe(i, j, k));
-            ddt(Pe)(i, j, k) += Delp2(Pe)(i, j, k) * x_factor * f;
-            ddt(Pe)(i + 1, j, k) -= Delp2(Pe)(i, j, k) * xp_factor * f;
+            // Delp2 dissipation terms applied differnetly to above which uses a
+            // finite volume implementation of radial second derivatives
+            // f = D // * (Pe(i + 1, j, k) - Pe(i, j, k));
+            ddt(Pe)(i, j, k) += Delp2(Pe)(i, j, k) * D; // x_factor * f;
+            // ddt(Pe)(i + 1, j, k) -= Delp2(Pe)(i, j, k) * xp_factor * f;
 
-            f = D * (Pi(i + 1, j, k) - Pi(i, j, k));
-            ddt(Pi)(i, j, k) += Delp2(Pi)(i, j, k) * x_factor * f;
-            ddt(Pi)(i + 1, j, k) -= Delp2(Pi)(i, j, k) * xp_factor* f;
+            // f = D // * (Pi(i + 1, j, k) - Pi(i, j, k));
+            ddt(Pi)(i, j, k) += Delp2(Pi)(i, j, k) * D; // x_factor * f;
+            // ddt(Pi)(i + 1, j, k) -= Delp2(Pi)(i, j, k) * xp_factor* f;
 
-            f = D * (Ne(i + 1, j, k) - Ne(i, j, k));
-            ddt(Ne)(i, j, k) += Delp2(Ne)(i, j, k) * x_factor * f;
-            ddt(Ne)(i + 1, j, k) -= Delp2(Ne)(i, j, k) * xp_factor* f;
+            // f = D // * (Ne(i + 1, j, k) - Ne(i, j, k));
+            ddt(Ne)(i, j, k) += Delp2(Ne)(i, j, k) * D; // x_factor * f;
+            // ddt(Ne)(i + 1, j, k) -= Delp2(Ne)(i, j, k) * xp_factor* f;
 
-            f = D * (NVi(i + 1, j, k) - NVi(i, j, k));
-            ddt(NVi)(i, j, k) += Delp2(NVi)(i, j, k) * x_factor * f;
-            ddt(NVi)(i + 1, j, k) -= Delp2(NVi)(i, j, k) * xp_factor* f;
+            // f = D // * (NVi(i + 1, j, k) - NVi(i, j, k));
+            ddt(NVi)(i, j, k) += Delp2(NVi)(i, j, k) * D; // x_factor * f;
+            // ddt(NVi)(i + 1, j, k) -= Delp2(NVi)(i, j, k) * xp_factor* f;
           }
         }
       }
@@ -4194,7 +4196,7 @@ int Hermes::rhs(BoutReal t) {
           Ne_L = 0.5 * (Ne[i.ym()] + Ne[i]),
           Ne_R = 0.5 * (Ne[i] + Ne[i.yp()]);
 
-        if (impurity_split) {
+        if (impurity_split_y) {
           if (mesh->getGlobalYIndexNoBoundaries(mesh->yend) < jyseps1_1) {
             fimp = fimp_id;
           } else if (mesh->getGlobalYIndexNoBoundaries(mesh->yend) > jyseps2_2) {

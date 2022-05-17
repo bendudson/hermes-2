@@ -905,7 +905,9 @@ int Hermes::init(bool restarting) {
         // Use older Laplacian solver
         phiSolver = Laplacian::create(&opt["phiSolver"]);
         // Set coefficients for Boussinesq solve
-        phiSolver->setCoefC(1. / SQ(coord->Bxy));
+        if (not boussinesq) {
+          phiSolver->setCoefC(1. / SQ(coord->Bxy));
+        }
       }
     }
     phi = 0.0;
@@ -1335,7 +1337,51 @@ int Hermes::rhs(BoutReal t) {
         ////////////////////////////////////////////
         // Non-Boussinesq
         //
-        throw BoutException("Non-Boussinesq not implemented yet");
+        if (split_n0) {
+          throw BoutException("split_n0 not compaible with non-Boussinesq solve");
+        }
+        if (newXZsolver) {
+          throw BoutException("Non-Boussinesq not implemented yet for newXZsolver");
+        }
+        // Update boundary conditions.
+        // The INVERT_SET flag takes the value in the guard (boundary) cell and sets the
+        // boundary between cells to this value.  This shift by 1/2 grid cell is
+        // important.
+
+        if (mesh->firstX()) {
+          for (int j = mesh->ystart; j <= mesh->yend; j++) {
+            for (int k = 0; k < mesh->LocalNz; k++) {
+              // Average phi + Pi at the boundary, and set the boundary cell
+              // to this value. The phi solver will then put the value back
+              // onto the cell mid-point
+              phi_boundary3d(mesh->xstart - 1, j, k) =
+                  0.5
+                  * (phi_boundary3d(mesh->xstart - 1, j, k) +
+                     phi_boundary3d(mesh->xstart, j, k));
+            }
+          }
+        }
+
+        if (mesh->lastX()) {
+          for (int j = mesh->ystart; j <= mesh->yend; j++) {
+            for (int k = 0; k < mesh->LocalNz; k++) {
+              phi_boundary3d(mesh->xend + 1, j, k) =
+                  0.5
+                  * (phi_boundary3d(mesh->xend + 1, j, k) +
+                     phi_boundary3d(mesh->xend, j, k));
+            }
+          }
+        }
+        auto n_B2 = Ne/SQ(coord->Bxy);
+        // Use older Laplacian solver
+        // Need to subtract Div(B^-2 Grad_perp(pi)) from rhs for non-Boussinesq solve, as
+        // coefficients of Grad_perp(phi) and Grad_perp(Pi) terms are not the same in
+        // non-Boussinesq vorticity
+        phiSolver->setCoefC(n_B2); // Set when initialised
+        // phi_boundary3d here is equivalent to withBoundary(phi, phi_boundary3d) because
+        // of the way phi_boundary3d is initialised
+        phi = phiSolver->solve((Vort - FV::Div_a_Laplace_perp(1/SQ(coord->Bxy),Pi))/n_B2,
+                               phi_boundary3d);
       }
     }
     phi.applyBoundary(t);
@@ -2805,35 +2851,46 @@ int Hermes::rhs(BoutReal t) {
     }
 
     // Advection of vorticity by ExB
+    ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(0.5 * Vort, phi, vort_bndry_flux,
+                                       poloidal_flows);
+    // V_ExB dot Grad(Pi)
+    Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA);
+    vEdotGradPi.applyBoundary("free_o2");
+
+    // delp2(phi) term
+    Field3D DelpPhi_2B2 = 0.5 * Delp2(phi) / SQ(coord->Bxy);
+    DelpPhi_2B2.applyBoundary("free_o2");
+
+    mesh->communicate(vEdotGradPi, DelpPhi_2B2);
+
+    ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
+
     if (boussinesq) {
-      TRACE("Vort:boussinesq");
-      // Using the Boussinesq approximation
-
-      ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(0.5 * Vort, phi, vort_bndry_flux,
-                                         poloidal_flows);
-
-      // V_ExB dot Grad(Pi)
-      Field3D vEdotGradPi = bracket(phi, Pi, BRACKET_ARAKAWA);
-      vEdotGradPi.applyBoundary("free_o2");
-      // delp2(phi) term
-      Field3D DelpPhi_2B2 = 0.5 * Delp2(phi) / SQ(coord->Bxy);
-      DelpPhi_2B2.applyBoundary("free_o2");
-
-      mesh->communicate(vEdotGradPi, DelpPhi_2B2);
-
-      ddt(Vort) -= FV::Div_a_Laplace_perp(0.5 / SQ(coord->Bxy), vEdotGradPi);
-
+      TRACE("Vort:boussinesq_terms");
       if (j_pol_terms){
-	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi + Pi, vort_bndry_flux,
+        // Using the Boussinesq approximation
+        ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, phi + Pi, vort_bndry_flux,
+                                           poloidal_flows);
+      }
+    } else {
+      TRACE("Vort:non-boussinesq_terms");
+      if (j_pol_terms){
+        // When the Boussinesq approximation is not made,
+        // then the changing ion density introduces a number
+        // of other terms.
+
+	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(Ne*DelpPhi_2B2, phi, vort_bndry_flux,
+					   poloidal_flows);
+	ddt(Vort) -= Div_n_bxGrad_f_B_XPPM(DelpPhi_2B2, Pi, vort_bndry_flux,
 					   poloidal_flows);
       }
 
-    } else {
-      // When the Boussinesq approximation is not made,
-      // then the changing ion density introduces a number
-      // of other terms.
+      // V_ExB dot Grad(n)
+      Field3D vEdotGradNe = bracket(phi, Ne, BRACKET_ARAKAWA);
+      vEdotGradNe.applyBoundary("free_o2");
+      mesh->communicate(vEdotGradNe);
 
-      throw BoutException("Hot ion non-Boussinesq not implemented yet\n");
+      ddt(Vort) += FV::Div_a_Laplace_perp(0.5 * vEdotGradNe / SQ(coord->Bxy), phi);
     }
 
     if (classical_diffusion) {
@@ -3352,7 +3409,11 @@ int Hermes::rhs(BoutReal t) {
     // in the vorticity equation
     ddt(Pi) -= j_diamag_scale * (2. / 3) * Pi * (Curlb_B * Grad(phi));
 
-    ddt(Pi) += j_diamag_scale * Pi * Div((Pe + Pi) * Curlb_B);
+    if (boussinesq) {
+      ddt(Pi) += j_diamag_scale * Pi * Div((Pe + Pi) * Curlb_B);
+    } else {
+      ddt(Pi) += j_diamag_scale * Pi / Nelim * Div((Pe + Pi) * Curlb_B);
+    }
   }
 
   if (j_par) {

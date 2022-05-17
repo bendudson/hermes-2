@@ -103,6 +103,29 @@ where in this equation the ion diamagnetic velocity $\mathbf{V}_{di} = \frac{\ma
   \pi_{ci} &\simeq& \frac{3m_i}{4p_iT_i}\left[0.20q_{||i}^2 - 0.085q_i^2\right] + 0.96\frac{p_i}{\nu_i}\Bigg\{\kappa\cdot\left[\mathbf{V}_E + \mathbf{V}_{di} + 1.61\frac{\mathbf{b}\times\nabla T_i}{B}\right] \nonumber \\
   && - \frac{2}{\sqrt{B}}\partial_{||}\left(\sqrt{B}V_{||i}\right) - \frac{1.42}{p_i\sqrt{B}}\partial_{||}\left(\sqrt{B}q_{||i}\right) - \frac{0.49q_{||i}}{p_i}\left(2.27\partial_{||}\ln T_i - \partial_{||}\ln p_i\right)\Bigg\} \label{eq:pi_ci}
 \end{eqnarray}
+The non-Boussinesq version of the vorticity is
+\begin{equation}
+\omega = \nabla\cdot\left[\frac{1}{B^2}\left(n\nabla_\perp\phi + \nabla_\perp p_i\right)\right]
+\end{equation}
+and the corresponding evolution equation is:
+\begin{subequations}
+\begin{eqnarray}
+%
+% Vorticity
+%
+  \frac{\partial\omega}{\partial t} &=& \nabla\cdot\left[\left(p_e + p_i\right)\nabla\times\frac{\mathbf{b}}{B}\right] \label{eq:vort-nB_diamag} \\
+  && + \nabla_{||}j_{||} \label{eq:vort-nB_jpar} \\
+  && - \nabla\cdot\Big[ \frac{1}{2B^2}\nabla_\perp\left(\mathbf{V}_{E\times B}\cdot\nabla p_i\right) + \frac{\omega}{2}\mathbf{V}_{E\times B}  +\frac{n}{2B^2}\nabla_\perp^2\phi \left(\mathbf{V}_{E\times B} + \mathbf{V}_{di}\right) \Big] \label{eq:vort-nB_c} \\
+  && + \nabla\cdot\left[\left(\frac{1}{2B^2}\mathbf{V}_{E\times B}\cdot\nabla n\right)\nabla_\perp\phi\right] \\
+  && + \nabla\cdot\left(\frac{3T_i}{10\tau_iB^2}\nabla_\perp\omega\right) \label{eq:vort-nB_perpvis} \\
+  && + \nabla\cdot\left[\frac{\pi_{ci}}{2}\nabla\times\frac{\mathbf{b}}{B} - \frac{1}{3}\frac{\mathbf{b}\times\nabla\pi_{ci}}{B}\right] \\
+  && + \nabla\cdot\left(\nu_A\nabla_\perp\left<\omega\right>\right) \\
+  && - \nabla\cdot\left(\frac{F_\perp}{nB^2}\nabla_\perp\phi\right)
+\end{eqnarray}
+\end{subequations}
+where the ion diamagnetic velocity $\mathbf{V}_{di} = \frac{\mathbf{b}\times\nabla p_i}{n B}$ uses the full density $n$.
+In addition $n_0$ is replaced by the full $n$ in the ion pressure equation~\ref{eq:ion-pressure} and the conserved energy~\ref{eq:conserved-energy} for the non-Boussinesq version.
+
 The electron pressure equation is:
 \begin{subequations}
 \begin{eqnarray}
@@ -144,7 +167,7 @@ The ion pressure equation is:
 && + \frac{5}{2}\nabla\cdot\left(\frac{T_i}{T_e}\frac{\rho_e^2}{\tau_e}\left[ \nabla_\perp p_e + \nabla_\perp p_i - \frac{3}{2}n\nabla_\perp T_e \right]\right) \\
 && - \frac{3T_i}{10\tau_iB^2}\nabla_\perp\omega\cdot\nabla\left(\phi + \frac{p_i}{n_0}\right) - \left[\frac{\pi_{ci}}{2}\nabla\times\frac{\mathbf{b}}{B} - \frac{1}{3}\frac{\mathbf{b}\times\nabla\pi_{ci}}{B}\right]\cdot\nabla\left(\phi + \frac{p_i}{n_0}\right) \\
 && + S_{pi} - Q_i + W_i
-\end{eqnarray}
+\end{eqnarray}\label{eq:ion-pressure}
 \end{subequations}
 where the terms are a) cross-field E$\times$B and magnetic drifts including compression; b) parallel flow including compression;
 c) energy exchange with diamagnetic flows; d) parallel viscous heating; e) parallel and perpendicular collisional heat conduction; f) collisional resistive drift; g) heating due to perpendicular viscosity; h)
@@ -207,6 +230,7 @@ and this identity is important in deriving energy conservation.
 The plasma model is cast in conservative form, conserving particle number, and an energy
 \begin{equation}
 E = \int dv \frac{m_in_0}{2}\left|\frac{\nabla_\perp\phi}{B} + \frac{\nabla_\perp p_i}{en_0B}\right|^2 + \frac{1}{2}m_inV_{||i}^2 + \frac{3}{2}p_e + \frac{3}{2}p_i + \frac{1}{4}\beta_e\left|\nabla_\perp\psi\right|^2 + \frac{m_e}{m_i}\frac{1}{2}\frac{j_{||}^2}{n}
+\label{eq:conserved-energy}
 \end{equation}
 where the terms correspond to the ion perpendicular kinetic energy ($E\times B$ and diamagnetic flow), ion parallel kinetic energy, electron and ion thermal energy, and electromagnetic field energy. Details are given in section~\ref{sec:conservation}. Differential operators are discretised using flux-conservative Finite Volume methods, details of which are given in section~\ref{sec:operators}. 
 
@@ -224,7 +248,7 @@ Several models for neutral gas evolution are available, described in section~\re
 These switches control the terms included in the plasma
 evolution equations. They are grouped so that switching on
 or off a term maintains energy conservation, though the
-form of the conserved energy may change. See section~\ref{sec:rhsfunc} for details.
+form of the conserved energy may change. See section~\ref{sec:conservation} for details.
 \begin{center}
 \begin{tabular}{l c c}
   Setting & Default & Description \\

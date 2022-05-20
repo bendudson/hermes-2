@@ -138,6 +138,8 @@ private:
 
   bool boussinesq;     // Use a fixed density (Nnorm) in the vorticity equation
 
+  bool subtract_Pi_after_Laplace = true;
+
   bool sinks; // Sink terms for running 2D drift-plane simulations
   bool sheath_closure; // Sheath closure sink on vorticity (if sinks = true)
   bool drift_wave;     // Drift-wave closure (if sinks=true)

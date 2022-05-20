@@ -335,6 +335,10 @@ int Hermes::init(bool restarting) {
 
   OPTION(optsc, boussinesq, false);
 
+  subtract_Pi_after_Laplace = optsc["subtract_Pi_after_Laplace"]
+    .doc("Solve from Vort for (phi+Pi), then subtract Pi. Otherwise subtract from Vort before solving")
+    .withDefault<bool>(true);
+
   OPTION(optsc, sinks, false);
   OPTION(optsc, sheath_closure, true);
   OPTION(optsc, drift_wave, false);
@@ -1253,39 +1257,45 @@ int Hermes::rhs(BoutReal t) {
         //    and sets the boundary between cells to this value.
         //    This shift by 1/2 grid cell is important.
 
-        if (mesh->firstX()) {
-          for (int j = mesh->ystart; j <= mesh->yend; j++) {
-            for (int k = 0; k < mesh->LocalNz; k++) {
-              // Average phi + Pi at the boundary, and set the boundary cell
-              // to this value. The phi solver will then put the value back
-              // onto the cell mid-point
-              phi_boundary3d(mesh->xstart - 1, j, k) =
-                  0.5
-                  * (phi_boundary3d(mesh->xstart - 1, j, k) +
-                     phi_boundary3d(mesh->xstart, j, k) +
-                     Pi(mesh->xstart - 1, j, k) +
-                     Pi(mesh->xstart, j, k));
+        if (subtract_Pi_after_Laplace) {
+          if (mesh->firstX()) {
+            for (int j = mesh->ystart; j <= mesh->yend; j++) {
+              for (int k = 0; k < mesh->LocalNz; k++) {
+                // Average phi + Pi at the boundary, and set the boundary cell
+                // to this value. The phi solver will then put the value back
+                // onto the cell mid-point
+                phi_boundary3d(mesh->xstart - 1, j, k) =
+                    0.5
+                    * (phi_boundary3d(mesh->xstart - 1, j, k) +
+                       phi_boundary3d(mesh->xstart, j, k) +
+                       Pi(mesh->xstart - 1, j, k) +
+                       Pi(mesh->xstart, j, k));
+              }
             }
           }
-        }
 
-        if (mesh->lastX()) {
-          for (int j = mesh->ystart; j <= mesh->yend; j++) {
-            for (int k = 0; k < mesh->LocalNz; k++) {
-              phi_boundary3d(mesh->xend + 1, j, k) =
-                  0.5
-                  * (phi_boundary3d(mesh->xend + 1, j, k) +
-                     phi_boundary3d(mesh->xend, j, k) +
-                     Pi(mesh->xend + 1, j, k) +
-                     Pi(mesh->xend, j, k));
+          if (mesh->lastX()) {
+            for (int j = mesh->ystart; j <= mesh->yend; j++) {
+              for (int k = 0; k < mesh->LocalNz; k++) {
+                phi_boundary3d(mesh->xend + 1, j, k) =
+                    0.5
+                    * (phi_boundary3d(mesh->xend + 1, j, k) +
+                       phi_boundary3d(mesh->xend, j, k) +
+                       Pi(mesh->xend + 1, j, k) +
+                       Pi(mesh->xend, j, k));
+              }
             }
           }
         }
-        if (split_n0) {
+        if (split_n0 && subtract_Pi_after_Laplace) {
           ////////////////////////////////////////////
           // Boussinesq, split
           // Split into axisymmetric and non-axisymmetric components
-          Field2D Vort2D = DC(Vort); // n=0 component
+          Field3D rhs = Vort;
+          if (!subtract_Pi_after_Laplace) {
+            rhs -= FV::Div_a_Laplace_perp(1. / SQ(coord->Bxy), Pi);
+          }
+          Field2D rhs2D = DC(rhs); // n=0 component
 
           if (!phi_boundary2d.isAllocated()) {
             // Make sure that the 2D boundary field is set
@@ -1295,18 +1305,25 @@ int Hermes::rhs(BoutReal t) {
           // Set the boundary
           phi2D.setBoundaryTo(phi_boundary2d);
 
-          phi2D = laplacexy->solve(Vort2D, phi2D);
+          phi2D = laplacexy->solve(rhs2D, phi2D);
 
           // Solve non-axisymmetric part using X-Z solver
           if (newXZsolver) {
             newSolver->setCoefs(1. / SQ(coord->Bxy), 0.0);
-            phi = newSolver->solve(Vort - Vort2D,
-                                   // Second argument is initial guess. Use current phi, and update boundary
-                                   withBoundary(phi + Pi - phi2D, // Value in domain
-                                                phi_boundary3d - phi_boundary2d)); // boundary
+            if (subtract_Pi_after_Laplace) {
+              phi = newSolver->solve(rhs - rhs2D,
+                                     // Second argument is initial guess. Use current phi, and update boundary
+                                     withBoundary(phi + Pi - phi2D, // Value in domain
+                                                  phi_boundary3d - phi_boundary2d)); // boundary
+            } else {
+              phi = newSolver->solve(rhs - rhs2D,
+                                     // Second argument is initial guess. Use current phi, and update boundary
+                                     withBoundary(phi - phi2D, // Value in domain
+                                                  phi_boundary3d - phi_boundary2d)); // boundary
+            }
           } else {
             phiSolver->setCoefC(1. / SQ(coord->Bxy));
-            phi = phiSolver->solve((Vort - Vort2D) * SQ(coord->Bxy),
+            phi = phiSolver->solve((rhs - rhs2D) * SQ(coord->Bxy),
                                    phi_boundary3d - phi_boundary2d); // Note: non-zero due to Pi variation
           }
           phi += phi2D; // Add axisymmetric part
@@ -1318,18 +1335,32 @@ int Hermes::rhs(BoutReal t) {
           if (newXZsolver) {
             // Use the new LaplaceXZ solver
             // newSolver->setCoefs(1./SQ(coord->Bxy), 0.0); // Set when initialised
-            phi = newSolver->solve(Vort,
-                                   withBoundary(phi + Pi,  // Value in domain
-                                                phi_boundary3d)); // boundary
+            if (subtract_Pi_after_Laplace) {
+              phi = newSolver->solve(Vort,
+                                     withBoundary(phi + Pi,  // Value in domain
+                                                  phi_boundary3d)); // boundary
+            } else {
+              phi = newSolver->solve(Vort - FV::Div_a_Laplace_perp(1. / SQ(coord->Bxy), Pi),
+                                     withBoundary(phi,  // Value in domain
+                                                  phi_boundary3d)); // boundary
+            }
           } else {
             // Use older Laplacian solver
             // phiSolver->setCoefC(1./SQ(coord->Bxy)); // Set when initialised
-            phi = phiSolver->solve(Vort * SQ(coord->Bxy), phi_boundary3d);
+            if (subtract_Pi_after_Laplace) {
+              phi = phiSolver->solve(Vort * SQ(coord->Bxy), phi_boundary3d);
+            } else {
+              phi = phiSolver->solve((Vort - FV::Div_a_Laplace_perp(1. / SQ(coord->Bxy), Pi))
+                                       * SQ(coord->Bxy),
+                                     phi_boundary3d);
+            }
           }
         }
         
-        // Hot ion term in vorticity
-        phi -= Pi;
+        if (subtract_Pi_after_Laplace) {
+          // Hot ion term in vorticity
+          phi -= Pi;
+        }
 
       } else {
         ////////////////////////////////////////////

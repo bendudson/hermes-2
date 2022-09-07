@@ -907,6 +907,11 @@ int Hermes::init(bool restarting) {
         // Set coefficients for Boussinesq solve
         if (boussinesq) {
           phiSolver->setCoefC(1. / SQ(coord->Bxy));
+        } else {
+          if (not phiSolver.uses3DCoefs()) {
+            throw BoutException("Non-Boussinesq solve requires phiSolver to support 3D "
+                                "coefficients.")
+          }
         }
       }
     }

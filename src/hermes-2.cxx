@@ -905,7 +905,7 @@ int Hermes::init(bool restarting) {
         // Use older Laplacian solver
         phiSolver = Laplacian::create(&opt["phiSolver"]);
         // Set coefficients for Boussinesq solve
-        if (not boussinesq) {
+        if (boussinesq) {
           phiSolver->setCoefC(1. / SQ(coord->Bxy));
         }
       }

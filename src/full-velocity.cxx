@@ -324,8 +324,8 @@ void FullVelocity::update(const Field3D &Ne, const Field3D &Te,
   /////////////////////////////////////////////////////
   // Atomic processes
 
-  Field3D Riz, Rrc, Rcx;
-  neutral_rates(Ne, Te, Ti, Vi, Nn, Tn, Vnpar, S, F, Qi, Rp, Riz, Rrc, Rcx);
+  Field3D Riz, Rrc, Rcx, Rex;
+  neutral_rates(Ne, Te, Ti, Vi, Nn, Tn, Vnpar, S, F, Qi, Rp, Riz, Rrc, Rcx, Rex);
 
   Fperp = Rrc + Rcx; // Friction for vorticity
 

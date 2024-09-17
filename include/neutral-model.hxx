@@ -26,6 +26,7 @@ public:
     
     // Options for calculating rates
     OPTION(options, Eionize, 30); // Energy loss per ionisation [eV]
+    OPTION(options, h_excitation, true); // Add to plasma radiation sink
   }
   virtual ~NeutralModel() {}
   
@@ -74,11 +75,13 @@ protected:
   UpdatedRadiatedPower hydrogen; // Atomic rates (H.Willett)
   
   BoutReal Eionize;   // Energy loss per ionisation [eV]
+
+  bool h_excitation; // add excitation energy to the hydrogen radiation energy sink
   
   void neutral_rates(const Field3D &Ne, const Field3D &Te, const Field3D &Ti, const Field3D &Vi,    // Plasma quantities
                      const Field3D &Nn, const Field3D &Tn, const Field3D &Vnpar, // Neutral gas
                      Field3D &S, Field3D &F, Field3D &Qi, Field3D &R,  // Transfer rates
-                     Field3D &Riz, Field3D &Rrc, Field3D &Rcx);        // Rates
+                     Field3D &Riz, Field3D &Rrc, Field3D &Rcx, Field3D &Rex);        // Rates
 
 private:
   NeutralModel();
